@@ -1,0 +1,12 @@
+node_modules/
+out/
+dist/
+.env
+.env.*
+!.env.example
+.DS_Store
+.prototype-data/
+test-results/
+*.log
+# Local kickoff materials; not required to build or run the prototype.
+/input/

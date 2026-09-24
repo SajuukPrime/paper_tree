@@ -1,0 +1,211 @@
+:root {
+  font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", "PingFang SC", sans-serif;
+  color: #293b31;
+  background: #f5f6f2;
+  font-size: 13px;
+  color-scheme: light;
+}
+* {
+  box-sizing: border-box;
+}
+body {
+  margin: 0;
+}
+button {
+  font: inherit;
+  background: white;
+  color: #34513e;
+  border: 1px solid #d3ddcf;
+  padding: 8px 12px;
+  border-radius: 6px;
+  cursor: pointer;
+}
+button:disabled {
+  opacity: 0.45;
+  cursor: default;
+}
+.app {
+  height: 100vh;
+  display: flex;
+  flex-direction: column;
+}
+header {
+  display: flex;
+  align-items: center;
+  padding: 0 24px;
+  height: 62px;
+  background: white;
+  border-bottom: 1px solid #dde4d7;
+  flex-shrink: 0;
+}
+small,
+.hint {
+  color: #87917e;
+  line-height: 1.6;
+}
+.layout {
+  display: grid;
+  position: relative;
+  grid-template-columns: 300px minmax(450px, 1fr);
+  flex: 1;
+  min-height: 0;
+}
+.library-rail,
+.research-panel {
+  padding: 20px 16px;
+  display: flex;
+  flex-direction: column;
+  min-height: 0;
+  background: #f0f3eb;
+}
+h2 {
+  font-size: 16px;
+  margin: 0 0 18px;
+}
+nav {
+  overflow: auto;
+}
+.tree,
+.tree ul {
+  list-style: none;
+  padding: 0;
+  margin: 0;
+}
+.tree ul {
+  margin-left: 11px;
+  padding-left: 8px;
+  border-left: 1px solid #bdcdb2;
+}
+main,
+.reader {
+  min-width: 0;
+  min-height: 0;
+  display: flex;
+  flex-direction: column;
+}
+.paper-heading {
+  padding: 16px 22px;
+  background: #fafbf7;
+}
+h1 {
+  font-size: 23px;
+  margin: 0;
+}
+.reader {
+  flex: 1;
+}
+.reader-tools {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding: 10px 18px;
+  border-bottom: 1px solid #dde4d7;
+}
+.pdf-stage {
+  position: relative;
+  flex: 1;
+  min-height: 0;
+}
+.pdf-scroll {
+  position: absolute;
+  inset: 0;
+  overflow: auto;
+  background: #e8ece5;
+}
+.research-panel {
+  background: white;
+  position: absolute;
+  z-index: 10;
+  right: 24px;
+  top: 124px;
+  width: 350px;
+  max-height: calc(100% - 148px);
+  border: 1px solid #d3ddcf;
+  border-radius: 20px;
+  box-shadow: 0 16px 50px #23332030;
+}
+.results {
+  overflow: auto;
+  flex: 1;
+}
+.candidate {
+  border-top: 1px solid #e1e7db;
+  padding: 15px 0;
+}
+[role="alert"] {
+  background: #fff0e8;
+  color: #966448;
+  padding: 10px;
+  overflow-wrap: anywhere;
+}
+footer {
+  height: 30px;
+  padding: 6px 20px;
+  flex-shrink: 0;
+  border-top: 1px solid #dde4d7;
+  color: #89967d;
+}
+
+.associate-bar {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  padding: 8px 20px;
+}
+.associate-bar span {
+  flex: 1;
+  overflow: hidden;
+  white-space: nowrap;
+  text-overflow: ellipsis;
+}
+
+.bubble-heading {
+  display: flex;
+  justify-content: space-between;
+  align-items: baseline;
+}
+.search-context small {
+  display: block;
+}
+.tree-row {
+  display: flex;
+  align-items: center;
+  height: 30px;
+  border-radius: 5px;
+  margin: 2px 0;
+}
+.tree-row.selected {
+  background: #dcebd4;
+  box-shadow: inset 2px 0 #497c43;
+}
+.tree-row.on-path {
+  background: #eaf0e4;
+}
+.tree-node,
+.tree-toggle {
+  background: transparent;
+  border: 0;
+  padding: 4px;
+}
+.tree-toggle {
+  width: 22px;
+  flex-shrink: 0;
+}
+.tree-node {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  min-width: 0;
+  flex: 1;
+  text-align: left;
+}
+.tree-node span {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  flex: 1;
+}
+.tree-node small {
+  font-size: 10px;
+  white-space: nowrap;
+}
