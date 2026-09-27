@@ -1,110 +1,79 @@
 # Paper Tree
 
-**从一篇论文出发，沿着疑问建立可回溯的阅读关系。**
+**保留阅读现场，让每一次追问成为下一篇论文的入口。**
 
-Paper Tree 是一个 Electron 桌面论文阅读原型。保留 PDF 原版面，框选陌生概念或引用，由模型整理检索意图、NVIDIA `aiq-research` 获取研究依据，再查找、下载并关联下一篇论文。
+Paper Tree 是一款桌面论文阅读应用。在 PDF 中框选陌生概念或引用，AI 帮你整理检索目标、寻找相关论文；获取全文后，新论文会加入阅读关系图，随时可以沿着关联返回最初的疑问。
 
-![Paper Tree：论文关系图与连续 PDF 阅读](docs/images/reading.png)
+![Paper Tree：PDF 阅读与多层论文关系](docs/images/spark-27b-tree.png)
 
-## 核心流程
+## 从阅读到探索
 
-**导入 PDF → 框选内容 → 智能检索 → 获取论文 → 形成分支 → 返回原文**
+**导入 PDF → 框选内容 → 查找相关论文 → 下载并关联 → 继续阅读或返回原文**
 
-- **原版面阅读**：连续滚动、缩放、矩形框选；检索位置保存为可点击的标记。
-- **关联式探索**：关系图显示阅读分支，来源按钮返回父论文的原始位置。
-- **有依据的检索**：利用主题和缓存参考文献，保留学术术语，排除自身及无关候选；可以查看 NVIDIA Agent 研究记录。
-- **论文获取**：公开 PDF 尝试自动下载；需要登录时打开获取窗口，也支持手动补入文件。
-- **本机工作区**：根论文筛选、节点改名、分支删除；SQLite 保存数据，PDF 独立存储。
-- **中英文界面**：右上角语言选择即时生效；模型接口通过设置页面配置。
+- **保留 PDF 原版面**：连续滚动、缩放和矩形框选，已检索的位置保留可点击标记。
+- **看清阅读脉络**：用关系图组织论文分支，从子论文返回来源页与选区。
+- **围绕问题找论文**：结合选区、论文主题和参考文献生成查询，展示候选来源与关联原因。
+- **连接 NVIDIA Agent Skills**：通过 `aiq-research` 执行研究，研究记录可在结果面板中查看。
+- **选择自己的模型**：支持 OpenAI 兼容接口，也可连接 DGX Spark 上由 NVIDIA TensorRT-LLM 部署的 Qwen3.8-27B。
+- **本机管理阅读资料**：保存 PDF、阅读关系和检索记录，支持标题修改、分支删除及中英文界面。
 
-图中的连线表示用户的**探索关系**，不保证是论文间的正式引用关系。当前产品围绕检索与关联，没有聊天窗口。
+关系图记录的是你的阅读探索路径，连线不一定代表正式的文献引用。
 
-## 快速开始
+## 开始使用
 
-当前以源码运行，已在 macOS 验证；尚未提供安装包，DGX Spark 自部署推理仍待完成。
+通过源码安装并运行，已在 macOS 上验证。
 
-### 1. 准备环境
+### 安装与启动
 
-- Node.js **24+**、npm、Git。
-- Python **3.11–3.13**、[uv](https://docs.astral.sh/uv/)：用于安装并运行本机 AI-Q 后台。
-- 一个可用的 OpenAI 兼容模型接口。开发验证使用千问 `qwen-flash`。
-
-在项目根目录执行：
+准备 Node.js **24+**、npm、Git、Python **3.11–3.13** 和 [uv](https://docs.astral.sh/uv/)，然后在项目目录执行：
 
 ```bash
 npm ci
 npm run setup:aiq
-npm run dev
+npm run build
+npm start
 ```
 
-`setup:aiq` 会下载固定版本的 AI-Q 和依赖，首次安装可能较慢；macOS 上的上游依赖可能需要 Rust 工具链。安装与故障排查见 [NVIDIA 接入说明](docs/skills.md)。
+首次安装会下载 NVIDIA AI-Q 及其依赖。macOS 上部分依赖可能需要 Rust 工具链；详细说明见 [NVIDIA 集成](docs/skills.md)。
 
-### 2. 配置模型
+### 连接模型
 
-打开右上角 **⚙ 设置**，填写：
+打开右上角 **设置**，填写模型服务信息：
 
-| 配置 | 示例 |
+| 配置 | 说明 |
 | --- | --- |
-| API URL | `https://dashscope.aliyuncs.com/compatible-mode/v1` |
-| API Key | 你的接口密钥 |
-| Model | `qwen-flash` |
+| API URL | OpenAI 兼容基础地址，例如 `http://127.0.0.1:8355/v1` |
+| API Key | 服务提供的密钥；本仓库的本机推理配置使用占位值 `local` |
+| Model | 服务提供的模型 ID；本仓库 Spark 配置返回 `model` |
 
-URL 填基础地址，不包含 `/chat/completions`。点击 **保存并重启** 后，客户端与其启动的 AI-Q 后台使用相同配置。API Key 留空表示保留已保存值。
+URL 不包含 `/chat/completions`。点击 **保存并重启**，应用和本机研究后台会使用同一模型配置。日常使用无需编辑环境变量。
 
-日常使用不需要编辑环境变量。已有 `.env` 的模型配置仅在首次创建本机设置时迁移；之后以界面保存的设置为准。语言选择位于设置图标旁，切换后立即保存，**无需重启**。
+模型需要支持 JSON 输出和工具调用。使用云模型时，填写对应服务商的兼容地址、密钥和模型名。使用自部署模型时，按照 [DGX Spark 部署指南](docs/deployment.md) 启动服务并建立连接。
 
-### 3. 开始阅读
+### 探索第一篇论文
 
 1. 点击 **导入根论文**，或拖入含文字层的 PDF。
-2. 等待主题与参考文献索引完成，点击底部 **箭头＋放大镜** 工具。
-3. 拖出矩形框，点击框边的 **关联框内内容**。
-4. 查看浮动气泡中的候选、来源与关联原因，选择获取 PDF。
-5. 下载完成后生成子节点；继续探索，或点击 **回到源论文** 返回来源选区。
+2. 等待论文索引完成，点击底部工具栏的 **箭头＋放大镜**。
+3. 框选一个完整的方法名、概念或引用，点击 **关联框内内容**。
+4. 查看候选论文及其来源，选择获取 PDF。下载完成后，论文自动加入关系图。
+5. 在新论文中继续探索，或点击 **回到源论文** 返回原始选区。
 
-详细操作、英文按钮对照与截图见 [使用指南](docs/usage.md)。
+可以从公开的 [HorNet](https://arxiv.org/abs/2207.14284) 开始，框选首页的 `ConvNeXt`，寻找 *A ConvNet for the 2020s*。更多操作见 [使用指南](docs/usage.md)，更多阅读路径见 [示例与验证](docs/testing.md)。
 
-## 简明架构
+## 数据与隐私
 
-```mermaid
-flowchart LR
-  UI[Electron / React<br/>PDF 阅读与关系图] --> IPC[preload IPC]
-  IPC --> MAIN[Electron 主进程<br/>索引、检索、下载、关联]
-  MAIN --> STORE[(SQLite + PDF)]
-  MAIN --> MODEL[OpenAI 兼容模型接口]
-  MAIN --> SKILL[NVIDIA aiq-research<br/>官方 Python helper]
-  SKILL --> AIQ[本机 AI-Q Agent<br/>127.0.0.1:18181]
-  AIQ --> TOOL[论文检索工具]
-  AIQ --> MODEL
-  TOOL --> SOURCES[学术来源]
-  MAIN --> SOURCES
-```
+PDF、阅读关系和检索记录保存在本机。模型密钥经 Electron `safeStorage` 加密保存，界面不会显示已保存密钥的明文。
 
-没有独立 Web 业务服务、外部 SQL 服务或向量数据库。Electron 会启动本机 AI-Q 伴随进程；模型推理服务是另一角色，目前可使用公开 API，后续再替换为 Spark 上的兼容接口。
+PDF 文字在本地提取；建立索引时，首页内容会发送给你配置的模型。检索时，选区及必要上下文用于模型和 AI-Q 研究，查询词会发送给学术检索来源。选择自部署模型可以在自己的设备上完成推理，但查找与下载公开论文仍需要联网。
 
-[架构与数据流](docs/architecture.md) · [NVIDIA Skill 接入](docs/skills.md) · [测试与验收](docs/testing.md)
+## 文档
 
-## 开发与验证
+| 文档 | 内容 |
+| --- | --- |
+| [使用指南](docs/usage.md) | 阅读、检索、下载、回溯与工作区管理 |
+| [DGX Spark 部署](docs/deployment.md) | 使用 TensorRT-LLM 启动本地模型 |
+| [NVIDIA 集成](docs/skills.md) | Agent Skill、AI-Q 安装与配置 |
+| [架构说明](docs/architecture.md) | 组件职责、数据流与本地存储 |
+| [示例与验证](docs/testing.md) | 公开论文示例与验证命令 |
 
-```bash
-npm run dev           # 开发模式
-npm run build         # 规模检查、TypeScript 检查、构建
-npm start             # 构建并预览 Electron 客户端
-npm test              # 工作流、存储、查询规划与 Skill 协议测试
-npm run test:desktop  # 隔离的桌面回归，不使用真实模型或出版商
-npm run test:api      # 真实模型 + AI-Q + 公共论文来源，会消耗 API 用量
-```
-
-`test:api` 是独立命令行工具，读取环境变量 / `.env`，不读取客户端加密保存的 Key；配置方法见 [测试说明](docs/testing.md)。
-
-运行源码上限为 **16 文件 / 2,000 行**，源码、测试及配置合计上限为 **28 文件 / 2,900 行**；构建时检查。官方 vendored Skill 和下载的上游依赖另行管理。
-
-## 数据与当前边界
-
-- 数据位于 Electron `userData/workspace/`；`PAPER_TREE_DATA_DIR` 可指定独立工作区。
-- 模型密钥经 Electron `safeStorage` 加密后存入 SQLite，界面不回传已保存的明文 Key。
-- 本地提取 PDF 文字；首次索引会将首页发送给配置模型。检索会发送选区及必要上下文给模型与 AI-Q，短查询发往学术来源。**当前不是纯离线应用。**
-- 已接入官方 NVIDIA `aiq-research`；**未完成** DGX Spark 模型部署优化、OCR、库内语义检索和安装包。
-- 公开索引可能限流，模型筛选可能误判；机构登录仍需实测，学校账号并不等于通用全文 API Token。
-- 同篇论文可形成重复节点；同一区域多次检索的标记可能重叠。删除分支会删除后续节点及本机 PDF 副本，请留意确认框。
-
-截图来自当前 5 篇论文 / 4 条关联的真实工作区，阅读区展示开放的 [HorNet](https://arxiv.org/abs/2207.14284)。工作区和论文文件不随仓库分发。第三方 Skill 版本及许可证见 [vendor/nvidia-skills](vendor/nvidia-skills)。
+第三方 Skill 的版本和许可证见 [vendor/nvidia-skills](vendor/nvidia-skills)。论文全文、个人工作区和模型权重不随仓库分发。

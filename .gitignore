@@ -8,7 +8,7 @@ dist/
 .prototype-data/
 test-results/
 *.log
-# Local kickoff materials; not required to build or run the prototype.
+# Local reference materials; not required to build or run the application.
 /input/
 backend/*.egg-info/
 __pycache__/

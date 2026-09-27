@@ -1,0 +1,4 @@
+# Single-user starting point; cache fraction is NOT a total memory limit.
+max_batch_size: 1
+kv_cache_config:
+  free_gpu_memory_fraction: 0.1

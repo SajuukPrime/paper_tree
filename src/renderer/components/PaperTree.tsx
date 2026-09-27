@@ -25,11 +25,10 @@ export default function PaperTree({
     const nodes: { id: string; label: string; x: number; y: number; size: number; color: string }[] = [];
     const place = (id: string, x: number, y: number, angle: number, depth: number, color: string) => {
       const paper = workspace.papers.find((p) => p.id === id)!;
-      const task = workspace.tasks.find((t) => t.chosen?.url && t.chosen.url === paper.sourceUrl);
-      const label = paper.renamed ? paper.title : task?.plan?.terms[0] || parents.get(id)?.selectedText || paper.title.split(/[:：]/)[0];
+      const label = paper.renamed ? paper.title : paper.title.split(/[:：]/)[0];
       nodes.push({
         id,
-        label: label.replace(/(.{10,16})\s/g, "$1\n"),
+        label: (label.length > 42 ? label.slice(0, 39) + "…" : label).replace(/(.{10,16})\s/g, "$1\n"),
         x,
         y,
         size: depth === 0 ? 23 : depth === 1 ? 13 : 8,

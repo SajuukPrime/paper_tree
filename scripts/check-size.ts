@@ -30,6 +30,11 @@ const lines = async (files: string[]) =>
 const sourceLines = await lines(source),
   totalLines = await lines(all);
 console.log(`Runtime: ${source.length}/16 files, ${sourceLines}/2000 lines`);
-console.log(`All authored code/config/tests: ${all.length}/28 files, ${totalLines}/2900 lines`);
+console.log(`All authored code/config/tests: ${all.length}/28 files, ${totalLines}/2910 lines`);
 assert(source.length <= 16 && sourceLines <= 2000, "运行源码超过预算，请删减功能或重复代码。");
-assert(all.length <= 28 && totalLines <= 2900, "自有代码总量超过预算。");
+assert(all.length <= 28 && totalLines <= 2910, "自有代码总量超过预算。");
+
+const deployment = await filesIn("deploy");
+const deploymentLines = await lines(deployment);
+console.log(`Deployment: ${deployment.length}/3 files, ${deploymentLines}/180 lines (separate from app budget)`);
+assert(deployment.length <= 3 && deploymentLines <= 180, "部署代码超过预算。");

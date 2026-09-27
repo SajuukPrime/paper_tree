@@ -1,10 +1,12 @@
-# 架构与数据流
+# 架构说明
 
 [返回 README](../README.md) · [使用指南](usage.md) · [NVIDIA 接入](skills.md)
 
 ## 进程边界
 
-Paper Tree 是 Electron 客户端。React 渲染界面；preload 暴露有限 IPC；Electron 主进程负责文件、数据库、模型调用、研究编排和下载。本机 AI-Q 是研究用的 Python 伴随进程，默认由应用启动并绑定 `127.0.0.1:18181`。模型 API 是独立服务，目前使用千问兼容接口。
+Paper Tree 由桌面客户端、本机研究后台和模型服务组成。React 提供阅读界面，Electron 管理文件、工作区和下载，NVIDIA AI-Q 执行研究流程。模型可使用云端 OpenAI 兼容服务，或 DGX Spark 上的 NVIDIA TensorRT-LLM 服务。
+
+本文面向希望了解数据流、接入模型或扩展应用的使用者。日常操作见 [使用指南](usage.md)，自部署步骤见 [模型部署](deployment.md)。
 
 ```mermaid
 flowchart TD
@@ -30,7 +32,7 @@ flowchart TD
   RESEARCH --> IEEE[可选 IEEE 元数据 API]
 ```
 
-无需另起 Web 业务服务、SQL 服务或向量库。自部署模型尚未落地，当前架构只保留兼容接口替换位置。
+工作区使用嵌入式 SQLite，不依赖独立数据库服务。AI-Q 默认由客户端启动并绑定 `127.0.0.1:18181`；Spark 模型服务通过 SSH 隧道连接，桌面端与 AI-Q 共用同一模型接口。
 
 ## 代码导航
 
@@ -50,15 +52,16 @@ flowchart TD
 | `src/main/acquire.ts` | 获取窗口、持久会话、下载监听、手动导入配合 | 文件获取 |
 | `backend/aiq.yml` | 模型、Agent、数据源及本地数据库配置 | AI-Q 配置 |
 | `backend/paper_search.py` | 给 Agent 提供带来源的论文检索结果 | 自定义 NAT 工具 |
-| `vendor/nvidia-skills/` | 固定版本的官方 Skill、helper 与许可证 | 上游原件 |
+| `vendor/nvidia-skills/` | 固定版本的官方 Skill、helper 与许可证 | 上游组件 |
+| `deploy/` | TensorRT-LLM 启动配置与接口检查 | 模型部署 |
 
 ## 一次探索的数据流
 
 1. **导入**：`ImportInput` 携带文件名和 PDF 字节。检查文件头后写入本机，生成 `Paper`。不带 `taskId` 是根论文；带等待下载任务的 `taskId` 时生成子论文及关联。
 2. **索引**：读取论文时异步建立 `PaperIndex`。PDF.js 本地提取逐页文字和编号参考文献，模型读取首页生成标题与主题；按论文 ID 缓存。索引失败不阻止阅读。
-3. **框选**：文字层读取矩形内的完整词，生成 `ExpandInput`，包含论文 ID、页码、原文和相对页面的 `x/y/w/h`。这里没有 OCR。
+3. **框选**：文字层读取矩形内的完整词，生成 `ExpandInput`，包含论文 ID、页码、原文和相对页面的 `x/y/w/h`。
 4. **查询规划**：先用原文专名及引用线索筛选缓存参考文献，再让模型生成检索模式、意图、术语和最多两条短查询。明确引用优先使用核实过的标题或 arXiv ID；机制问题走关键词。
-5. **官方 Skill**：`skills.ts` 调用 NVIDIA `aiq.py` 的 health/chat/status/report。AI-Q 使用论文工具生成带来源的研究报告；失败会让任务失败，不绕过 Skill。
+5. **官方 Skill**：`skills.ts` 调用 NVIDIA `aiq.py` 的 health/chat/status/report。AI-Q 使用论文工具生成带来源的研究报告，报告与版本信息随任务保存；调用失败时向用户提供重试入口。
 6. **候选筛选**：通过学术元数据接口获得真实候选，去掉自身和重复结果；模型结合选区、查询计划和研究报告筛选相关性。精确引用标题要求候选标题匹配。
 7. **获取与建树**：用户选择候选后任务进入 `waiting-pdf`。获取窗口下载成功或手动补入 PDF 后，保存子论文和 `Relation`，任务变为 `completed`。
 
@@ -92,7 +95,6 @@ stateDiagram-v2
 - `Relation` 保存 sourceId、targetId、来源页码、原文和矩形。它表示探索关系，不自动证明学术引用。
 - `Task` 保存选区、计划、候选、选中项、状态及 `SkillRun`；后者含报告、版本号、地址、时间和可能的 job ID。
 - 改名只改变显示标题，并标记 `renamed`；不改原始索引。删除按后续分支级联处理，保留父论文上的检索记录。
-- 旧 `workspace.json` 仅用于首次迁移，没有 SQLite 状态时才采用；应用仍兼容这一迁移路径。
 
 ## 配置、语言和生命周期
 
@@ -103,7 +105,3 @@ stateDiagram-v2
 AI-Q 启动目录由 `AIQ_REPO` 指定，默认 `.prototype-data/aiq`。应用只停止自己启动的进程；指定 `AIQ_SERVER_URL` 连接已有本机后台时，其生命周期和模型环境由启动者管理。
 
 获取窗口使用独立持久会话 `persist:paper-acquisition`，仅捕获该窗口触发的下载。系统浏览器下载需要手动补入；不把学校网页登录 Cookie 转换为通用 Token。
-
-## 当前范围
-
-已经实现的是短研究辅助的论文探索闭环。尚未实现 OCR、库内语义检索、自动合并论文身份、重复选区归并、安装包及 DGX Spark 推理部署。模型首页摘要和研究说明仍按当前提示词生成；UI 切换语言不重写这些内容。

@@ -22,7 +22,7 @@ async function helper(command: string, ...args: string[]) {
     [join(root(), "vendor/nvidia-skills/aiq-research/scripts/aiq.py"), command, ...args],
     {
       env: { ...process.env, AIQ_SERVER_URL: endpoint() },
-      timeout: 120_000,
+      timeout: command === "chat" ? 600_000 : 120_000,
       maxBuffer: 2 * 1024 * 1024,
     },
   );
@@ -52,13 +52,14 @@ export function startSkills(): Promise<void> {
     await access(executable).catch(() => {
       throw new Error(tr("AI-Q 尚未安装，请先运行 npm run setup:aiq（需要 Python 3.11+ 和 uv）。", "AI-Q is not installed. Run npm run setup:aiq (requires Python 3.11+ and uv)."));
     });
+    const noProxy = [process.env.NO_PROXY || process.env.no_proxy, "127.0.0.1", "localhost", "::1"].filter(Boolean).join(",");
     owned = spawn(
       executable,
       ["serve", "--config_file", join(root(), "backend/aiq.yml"), "--host", "127.0.0.1", "--port", "18181"],
       {
         cwd: repository(),
-        env: { ...process.env, AIQ_DEV_ENV: "skill" },
-        stdio: "ignore",
+        env: { ...process.env, NO_PROXY: noProxy, no_proxy: noProxy, AIQ_DEV_ENV: "skill" },
+        stdio: process.env.PAPER_TREE_DEBUG ? "inherit" : "ignore",
       },
     );
     let failed = false;
