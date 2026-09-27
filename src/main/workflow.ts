@@ -1,21 +1,21 @@
 import { randomUUID } from "node:crypto";
-import type { Candidate, ExpandInput, ImportInput, Paper, Task } from "../shared/types";
+import { tr, type Candidate, type ExpandInput, type ImportInput, type Paper, type Task } from "../shared/types";
 import type { Storage } from "./storage";
 import { indexPdf } from "./model";
 import { research } from "./research";
-
-// Product loop: question → candidates → download → paper + relation.
 export function createWorkflow(storage: Storage, progress: (message: string) => void) {
   const indexing = new Map<string, Promise<import("../shared/types").PaperIndex>>();
   async function buildIndex(id: string) {
     let index = storage.index(id);
     if (!index) {
-      progress("提取论文主题和参考文献，保存到 SQLite…");
+      progress(tr("提取论文主题和参考文献，保存到 SQLite…", "Extracting the paper topic and references…"));
       index = await indexPdf(await storage.readPdf(id));
+      const paper = storage.get().papers.find((p) => p.id === id);
+      if (!paper) return index;
       storage.cache(id, index);
       Object.assign(
-        storage.get().papers.find((p) => p.id === id)!,
-        { title: index.title, topic: index.topic, referenceCount: index.references.length },
+        paper,
+        { title: paper.renamed ? paper.title : index.title, topic: index.topic, referenceCount: index.references.length },
       );
       await storage.save();
     }
@@ -33,9 +33,9 @@ export function createWorkflow(storage: Storage, progress: (message: string) => 
     ensureIndex,
     async importPaper(input: ImportInput) {
       if (!Buffer.from(input.bytes).subarray(0, 1024).includes(Buffer.from("%PDF-")))
-        throw new Error("下载内容不是 PDF，请在论文页面点击 PDF 下载。");
+        throw new Error(tr("下载内容不是 PDF，请在论文页面点击 PDF 下载。", "This download is not a PDF. Use the PDF download on the paper page."));
       const task = storage.get().tasks.find((t) => t.id === input.taskId);
-      if (input.taskId && (!task || task.status !== "waiting-pdf")) throw new Error("该任务不在等待 PDF。");
+      if (input.taskId && (!task || task.status !== "waiting-pdf")) throw new Error(tr("该任务不在等待 PDF。", "This task is not waiting for a PDF."));
       const paper: Paper = {
         id: randomUUID(),
         fileName: input.fileName,
@@ -52,6 +52,7 @@ export function createWorkflow(storage: Storage, progress: (message: string) => 
           question: task.question,
           selectedText: task.selectedText,
           page: task.page,
+          rect: task.rect,
         });
         task.status = "completed";
       }
@@ -60,7 +61,7 @@ export function createWorkflow(storage: Storage, progress: (message: string) => 
     },
     async expand(input: ExpandInput) {
       const parent = storage.get().papers.find((p) => p.id === input.paperId);
-      if (!parent) throw new Error("找不到源论文。");
+      if (!parent) throw new Error(tr("找不到源论文。", "Source paper not found."));
       const task: Task = { ...input, id: randomUUID(), status: "researching", query: "", candidates: [] };
       storage.get().tasks.push(task);
       await storage.save();
@@ -78,7 +79,7 @@ export function createWorkflow(storage: Storage, progress: (message: string) => 
     },
     async chooseCandidate(taskId: string, candidate: Candidate) {
       const task = storage.get().tasks.find((t) => t.id === taskId);
-      if (!task) throw new Error("找不到待处理任务。");
+      if (!task) throw new Error(tr("找不到待处理任务。", "Task not found."));
       task.chosen = candidate;
       task.status = "waiting-pdf";
       await storage.save();

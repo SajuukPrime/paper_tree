@@ -96,13 +96,23 @@ const launch = () =>
   electron.launch({
     args: ["."],
     cwd: process.cwd(),
-    env: { ...process.env, PAPER_TREE_DATA_DIR: directory, QWEN_BASE_URL: origin, QWEN_API_KEY: "local-test-only" },
+    env: {
+      ...process.env,
+      PAPER_TREE_DATA_DIR: directory,
+      AIQ_SERVER_URL: origin,
+      QWEN_BASE_URL: origin,
+      QWEN_API_KEY: "local-test-only",
+    },
   });
 let app = await launch();
 try {
   let page = await app.firstWindow();
   const errors: string[] = [];
-  const captureErrors = () => page.on("pageerror", (error) => errors.push(error.message));
+  const captureErrors = () =>
+    page.on("pageerror", (error) => {
+      errors.push(error.message);
+      console.log(error.message);
+    });
   captureErrors();
   await page.getByTestId("pdf-input").setInputFiles(pdfPath);
   await page.locator(".textLayer span").filter({ hasText: "Contrastive learning" }).first().waitFor();
@@ -110,21 +120,51 @@ try {
   assert.equal(await page.getByRole("button", { name: "可选原文" }).count(), 0);
   await page.getByText("对比学习 · 0 条参考文献").waitFor();
   await page.bringToFront();
-  assert.equal(await page.getByRole("button", {name: "下一页", exact: true}).count(), 0);
+  assert.equal(await page.getByRole("button", { name: "下一页", exact: true }).count(), 0);
   await page.locator('.page[data-page-number="2"]').scrollIntoViewIfNeeded();
-  await page.getByText("连续阅读 · 第 2 / 2 页").waitFor();
+  await page.getByText("第 2 / 2 页").waitFor();
+  assert.equal(await page.getByRole("button", { name: "阅读浏览", exact: true }).getAttribute("aria-pressed"), "true");
+  await page.getByRole("button", { name: "框选检索", exact: true }).click();
   const line = page.locator('.page[data-page-number="2"] .textLayer span').filter({ hasText: "Contrastive learning" });
   await line.scrollIntoViewIfNeeded();
+  await page.waitForTimeout(250);
   const bounds = (await line.boundingBox())!;
-  await page.mouse.move(bounds.x + 1, bounds.y + bounds.height / 2);
+  await page.mouse.move(bounds.x + 1, bounds.y + 1);
   await page.mouse.down();
-  await page.mouse.move(bounds.x + bounds.width - 1, bounds.y + bounds.height / 2, { steps: 12 });
+  await page.mouse.move(bounds.x + bounds.width - 1, bounds.y + bounds.height - 1, { steps: 12 });
+  assert.equal(await page.getByLabel("框选区域", { exact: true }).count(), 1);
   await page.mouse.up();
-  await page.locator(".associate-bar").filter({ hasText: "Contrastive" }).waitFor();
+  await page.getByRole("button", { name: "关联框内内容" }).waitFor();
   assert.equal(await page.locator("textarea").count(), 0);
-  assert.equal(await page.getByRole("button", { name: "关联选中内容" }).isEnabled(), true);
+  assert.equal(await page.getByRole("button", { name: "关联框内内容" }).isEnabled(), true);
   await page.getByText("对比学习 · 0 条参考文献").waitFor();
   await page.screenshot({ path: join(directory, "pdf-selection.png") });
+  assert.equal(await page.evaluate(() => window.getSelection()?.toString()), "");
+  const box = page.getByLabel("框选区域", { exact: true });
+  const rectangle = (await box.boundingBox())!;
+  assert(
+    Math.abs(rectangle.x - bounds.x - 1) < 2 && Math.abs(rectangle.y - bounds.y - 1) < 2,
+    "box aligns with drag coordinates despite PDF page borders",
+  );
+  const top = rectangle.y;
+  await page.locator(".pdf-scroll").evaluate((el) => el.scrollBy(0, -50));
+  await page.waitForTimeout(150);
+  assert(Math.abs((await box.boundingBox())!.y - top - 50) < 3, "box follows its PDF page while scrolling");
+  await app.evaluate(({ ipcMain }) => {
+    ipcMain.removeHandler("paper:expand");
+    ipcMain.handle("paper:expand", (_event, input) => {
+      (globalThis as any).boxTestInput = input;
+      return {};
+    });
+  });
+  await page.getByRole("button", { name: "关联框内内容" }).click();
+  await page.getByText("已筛选关联论文，请选择获取").waitFor();
+  const captured = await app.evaluate(() => (globalThis as any).boxTestInput);
+  assert.equal(captured.page, 2);
+  assert(captured.selectedText.includes("Contrastive learning"));
+  await page.screenshot({ path: join(directory, "rectangle-selection.png") });
+  assert(captured.rect.w > 0 && captured.rect.h > 0);
+  assert.equal(await box.count(), 0);
   await app.close();
 
   // Seed only search results. Download, cookie handling and relation creation stay real.
@@ -142,6 +182,7 @@ try {
       paperId: parentId,
       page: 2,
       selectedText: "Contrastive learning",
+      rect: captured.rect,
       question: `What motivates ${name}?`,
       status: "choosing",
       query: "fixture result",
@@ -166,13 +207,13 @@ try {
   app = await launch();
   page = await app.firstWindow();
   captureErrors();
-  const readerWidth = await page.locator(".reader").evaluate(el => el.clientWidth);
-  await page.getByRole("button", {name: "关联结果"}).click();
-  assert.equal(await page.locator(".reader").evaluate(el => el.clientWidth), readerWidth);
-  await page.locator(".pdf-scroll").click({position: {x: 20, y: 20}});
+  const readerWidth = await page.locator(".reader").evaluate((el) => el.clientWidth);
+  await page.getByRole("button", { name: "关联结果" }).click();
+  assert.equal(await page.locator(".reader").evaluate((el) => el.clientWidth), readerWidth);
+  await page.locator(".pdf-scroll").click({ position: { x: 20, y: 20 } });
   assert.equal(await page.locator(".research-panel").count(), 0);
-  await page.getByRole("button", {name: "关联结果"}).click();
-  await page.screenshot({path: join(directory, "bubble.png")});
+  await page.getByRole("button", { name: "关联结果" }).click();
+  await page.screenshot({ path: join(directory, "bubble.png") });
   const browserPromise = app.waitForEvent("window");
   await page.getByRole("button", { name: "打开页面，下载并关联" }).click();
   const browser = await browserPromise;
@@ -194,8 +235,8 @@ try {
   app = await launch();
   page = await app.firstWindow();
   captureErrors();
-  await page.getByRole("button", { name: "Child paper", exact: true }).click();
-  await page.getByRole("button", {name: "关联结果"}).click();
+  await page.getByLabel("切换论文").selectOption({ label: "Child paper" });
+  await page.getByRole("button", { name: "关联结果" }).click();
   await page.getByRole("button", { name: "获取 PDF 并关联" }).click();
   await page.getByRole("heading", { name: "Grandchild paper", exact: true, level: 1 }).waitFor();
   await page.locator(".textLayer span").first().waitFor();
@@ -206,20 +247,141 @@ try {
   await page.screenshot({ path: join(directory, "tree.png") });
   await page.getByRole("button", { name: "回到源论文" }).click();
   await page.getByRole("heading", { name: "Child paper", exact: true, level: 1 }).waitFor();
-  await page.getByText("连续阅读 · 第 2 / 2 页").waitFor();
+  await page.getByText("第 2 / 2 页").waitFor();
+  await page.locator(".paper-mark").waitFor();
+  const sourceLine = page
+    .locator('.page[data-page-number="2"] .textLayer span')
+    .filter({ hasText: "Contrastive learning" });
+  const scrollBox = (await page.locator(".pdf-scroll").boundingBox())!;
+  const sourceBox = (await sourceLine.boundingBox())!;
+  assert(sourceBox.y >= scrollBox.y && sourceBox.y < scrollBox.y + scrollBox.height);
+  const before = await page.locator(".pdf-scroll").evaluate((el) => el.scrollTop);
+  await page.getByLabel("切换论文").selectOption({ label: "Grandchild paper" });
+  await page.getByRole("heading", { name: "Grandchild paper", exact: true, level: 1 }).waitFor();
+  await page.getByLabel("切换论文").selectOption({ label: "Child paper" });
+  await page.waitForFunction((top) => Math.abs(document.querySelector(".pdf-scroll")!.scrollTop - top) < 5, before);
+  await page.getByLabel("已检索的位置").selectOption("Grandchild paper");
+  await page.getByLabel("关联论文气泡").waitFor();
+  await page.getByRole("button", { name: "收起关联论文" }).click();
+  const separator = page.getByRole("separator"),
+    dividerBounds = (await separator.boundingBox())!;
+  const oldWidth = await page.locator(".library-rail").evaluate((el) => el.clientWidth);
+  await page.mouse.move(dividerBounds.x + dividerBounds.width / 2, dividerBounds.y + 100);
+  await page.mouse.down();
+  await page.mouse.move(dividerBounds.x - 100, dividerBounds.y + 100, { steps: 10 });
+  await page.mouse.up();
+  assert((await page.locator(".library-rail").evaluate((el) => el.clientWidth)) < oldWidth - 70);
+  await page.getByLabel("缩放", { exact: true }).selectOption("1.25");
+  await page.waitForTimeout(250);
+  const restored = await page.locator(".paper-mark").evaluate((frame) => {
+    const sheet = frame.parentElement!,
+      a = frame.getBoundingClientRect(),
+      b = sheet.getBoundingClientRect();
+    return { x: (a.left - b.left - sheet.clientLeft) / sheet.clientWidth, w: a.width / sheet.clientWidth };
+  });
+  assert(Math.abs(restored.x - captured.rect.x) < 0.005 && Math.abs(restored.w - captured.rect.w) < 0.005);
   assert.deepEqual(errors, []);
   await app.close();
   app = await launch();
   page = await app.firstWindow();
-  await page.locator(".tree-node").nth(2).waitFor();
-  await page.getByRole("button", {name: "收起 Paper Tree prototype fixture", exact: true}).click();
-  assert.equal(await page.locator(".tree-node").count(), 1);
-  await page.getByRole("button", {name: "展开 Paper Tree prototype fixture", exact: true}).click();
-  assert.equal(await page.locator(".tree-node").count(), 3);
+  await page.getByLabel("切换论文").locator("option").nth(2).waitFor({ state: "attached" });
+  assert.equal(await page.getByRole("navigation", { name: "工作区列表" }).getByRole("button").count(), 1);
+  await page.locator(".network-canvas canvas").waitFor();
+  await page.getByRole("button", { name: "适合窗口" }).click();
+  await app.close();
+  data = readState();
+  data.papers.push({ ...data.papers[0], id: "second-root", title: "Second workspace" });
+  await writeFile(join(directory, "papers", "second-root.pdf"), pdf);
+  const db = database();
+  db.prepare("UPDATE state SET json=? WHERE id=1").run(JSON.stringify(data));
+  db.prepare("INSERT INTO paper_index(id,json) SELECT ?,json FROM paper_index WHERE id=?").run("second-root", rootId);
+  db.close();
+  app = await launch();
+  page = await app.firstWindow();
+  const workspaces = page.getByRole("navigation", { name: "工作区列表" });
+  await workspaces.getByRole("button", { name: "Second workspace" }).waitFor();
+  assert.equal(await workspaces.getByRole("button").count(), 2);
+  await workspaces.getByRole("button", { name: "Second workspace" }).click();
+  assert.equal(await page.getByLabel("切换论文").locator("option").count(), 1);
+  await page.getByLabel("搜索根论文").fill("Child");
+  assert.equal(await workspaces.getByRole("button").count(), 0);
+  await page.getByLabel("搜索根论文").fill("");
+  await workspaces.getByRole("button", { name: "Paper Tree prototype fixture", exact: true }).click();
+  assert.equal(await page.getByLabel("切换论文").locator("option").count(), 3);
+  await page.getByLabel("切换论文").selectOption({ label: "Child paper" });
+  assert.equal(
+    await workspaces
+      .getByRole("button", { name: "Paper Tree prototype fixture", exact: true })
+      .getAttribute("aria-current"),
+    "page",
+  );
+  await page.getByLabel("修改标题", { exact: true }).click();
+  await page.getByLabel("标题", { exact: true }).fill("Renamed child");
+  await page.getByRole("button", { name: "保存", exact: true }).click();
+  await page.getByRole("heading", { name: "Renamed child", exact: true }).waitFor();
+  assert.equal(readState().papers.find((p) => p.id === childId)?.renamed, true);
+  await app.evaluate(({ dialog }) => { dialog.showMessageBox = async (_window: any, options?: any) => {
+    if (!options.message.includes("1 篇后续论文")) throw new Error("Missing cascade count");
+    return { response: 0, checkboxChecked: false };
+  }; });
+  await page.getByLabel("删除节点").click();
+  await page.waitForFunction(() => !(document.querySelector('[aria-label="删除节点"]') as HTMLButtonElement).disabled);
+  assert.equal(readState().papers.length, 4);
+  await app.evaluate(({ dialog }) => { dialog.showMessageBox = async () => ({ response: 1, checkboxChecked: false }); });
+  await page.getByLabel("删除节点").click();
+  await page.getByRole("heading", { name: "Paper Tree prototype fixture", exact: true }).waitFor();
+  assert.equal(readState().papers.length, 2);
+  assert.equal(readState().relations.length, 0);
+  assert.equal(readState().tasks[0].status, "choosing");
+  await page.getByLabel("设置", { exact: true }).click();
+  await page.getByRole("dialog", { name: "模型设置" }).waitFor();
+  assert.equal(await page.getByLabel("接口 URL").inputValue(), origin);
+  assert.equal(await page.getByLabel("API Key").inputValue(), "");
+  await page.getByLabel("模型名").fill("new-fixture-model");
+  await page.getByLabel("API Key").fill("updated-test-only");
+  // Suppress automatic relaunch only in this isolated fixture; launch explicitly below.
+  await app.evaluate(({ app }) => {
+    (globalThis as any).originalQuit = app.quit;
+    app.relaunch = () => {};
+    app.quit = () => {};
+  });
+  await page.getByRole("button", { name: "保存并重启" }).click();
+  await page.waitForFunction(async () => (await window.paperTree.settings()).model === "new-fixture-model");
+  await app.evaluate(({ app }) => { app.quit = (globalThis as any).originalQuit; });
+  await app.close();
+  app = await launch();
+  page = await app.firstWindow();
+  await page.getByLabel("设置", { exact: true }).click();
+  await page.getByRole("dialog", { name: "模型设置" }).waitFor();
+  assert.equal(await page.getByLabel("模型名").inputValue(), "new-fixture-model");
+  assert.equal(await page.getByLabel("API Key").inputValue(), "");
+  assert(await app.evaluate(() => process.env.QWEN_API_KEY === "updated-test-only"));
+  const settingsDb = database();
+  assert(!String(settingsDb.prepare("SELECT json FROM settings").get()!.json).includes('test-only'));
+  settingsDb.close();
+  await page.getByRole("button", { name: "取消", exact: true }).click();
+  await page.getByLabel("语言", { exact: true }).selectOption("en");
+  await page.getByRole("button", { name: "Settings", exact: true }).waitFor();
+  assert.equal(await page.locator("html").getAttribute("lang"), "en");
+  await page.getByRole("toolbar", { name: "Reading toolbar" }).waitFor();
+  assert.equal(await page.getByRole("heading", { name: "Paper Tree prototype fixture", exact: true }).count(), 1);
+  await app.close();
+  app = await launch();
+  page = await app.firstWindow();
+  await page.getByLabel("Language", { exact: true }).selectOption("zh");
+  await page.getByRole("button", { name: "设置", exact: true }).waitFor();
+  assert(await app.evaluate(() => process.env.PAPER_TREE_LANGUAGE === "zh"));
+  console.log("PASS: live language switching; persisted language; unchanged paper title.");
+  console.log("PASS: rename; cascade cancel/confirm; encrypted settings migration/save/restart.");
   console.log(
-    "PASS: continuous PDF scrolling + selection; non-resizing closable bubble; login download + recursive tree; return to source page; restart.",
+    "PASS: continuous PDF scrolling + selection; non-resizing closable bubble; login download + recursive tree; source highlight + scroll restoration; search bookmarks; draggable divider; restart.",
   );
   console.log("Screenshots:", directory);
+} catch (error) {
+  const failedPage = await app.firstWindow();
+  await failedPage.screenshot({ path: "/tmp/paper-tree-desktop-failure.png" });
+  console.log(await failedPage.locator("body").innerText());
+  throw error;
 } finally {
   await app.close();
   server.close();

@@ -1,93 +1,85 @@
 # 测试与验收
 
-## 固定检索样例
+[返回 README](../README.md) · [使用指南](usage.md) · [NVIDIA 接入](skills.md)
 
-- 根论文：**YOLO-HMC: An Improved Method for PCB Surface Defect Detection**。
-- DOI：`10.1109/TIM.2024.3351241`。
-- PDF：使用当前已经导入的 11 页版本，不用重新下载付费全文。
-- 固定关键词：**HorNet**，选择 PDF 第 1 页中完整的这个单词，不添加 PCB、YOLO 等关键词。
-- 固定参考文献：[31]，含 `arXiv:2207.14284`。
-- 预期目标：[HorNet: Efficient High-Order Spatial Interactions with Recursive Gated Convolutions](https://arxiv.org/abs/2207.14284)。arXiv 版本尾缀可以变化。
+## 自动检查
 
-## 手工验收（按顺序）
-
-| 步骤 | 操作 | 通过标准 |
-|---|---|---|
-| 1 | 启动客户端，打开上述根论文 | 显示 PDF 原版面、主题，当前版本参考文献缓存为 45 条 |
-| 2 | 鼠标/触控板向下滚动 | 连续看到第 2、3 页；没有必须点击的下一页按钮；顶部页码跟随滚动 |
-| 3 | 回到第 1 页，划选 `HorNet`，点击「关联选中内容」 | 右侧浮动气泡打开，PDF 宽度不变；不出现聊天输入框 |
-| 4 | 检查候选、依据和来源 | 命中参考文献 [31]，出现上述 HorNet 论文及关联原因；不返回 YOLO-HMC 自身、洋葱路由 HORNET 或无关 PCB 论文 |
-| 5 | 收起气泡，再点「关联结果」 | 正文阅读位置保留，可以重新查看同一批候选 |
-| 6 | 对正确 HorNet 候选点「获取 PDF 并关联」 | 打开获取窗口，公开 PDF 下载完成后出现子论文行、连接线和来源页码；悬停可查看完整标题与关联原文 |
-| 7 | 从子论文点「回到源论文 p.1」 | 返回 YOLO-HMC 第 1 页；当前路线高亮 |
-| 8 | 退出并重启 | 两篇论文及关系仍在；已有索引从 SQLite 读取，不重复生成 |
-
-若只验证检索、不希望新增节点，在步骤 5 后停止。重复执行下载会生成新分支，当前原型没有全局论文合并功能。
-
-## 命令行验证
+从项目根目录执行：
 
 ```bash
 npm run build
 npm test
 npm run test:desktop
+```
+
+| 命令 | 验证内容 | 外部依赖 |
+| --- | --- | --- |
+| `build` | 文件/行数预算、TypeScript、Electron 构建 | 已安装 npm 依赖 |
+| `test` | SQLite 持久化、引用定位、查询规划、候选排除、分支删除、官方 helper 协议 | 本机模拟 HTTP 服务及 Python；不请求真实模型 |
+| `test:desktop` | 连续 PDF、框选、标记、气泡、登录下载、递归关联、工作区切换、改名/删除、设置迁移、重启、中英文切换 | 桌面显示环境；本机模拟模型和出版商 |
+
+桌面测试创建独立临时工作区及两页合成 PDF，不修改正常阅读库。关键截图路径在终端末尾输出；它验证真实 Electron 下载事件与受控 Cookie 会话，但**不等于真实学校 SSO 通过**。
+
+## 真实接口验证（按需）
+
+`test:api` 读取 `.env` / 进程环境，而非客户端 SQLite 中加密保存的设置。首次配置可将 `.env.example` 复制为 `.env`，已有文件不要覆盖；填写 `QWEN_BASE_URL`、`QWEN_API_KEY`、`QWEN_MODEL`，并先完成 `npm run setup:aiq`。
+
+```bash
 npm run test:api
-# 用自己的同版本 PDF 验证真实参考文献提取：
+# 可选：验证自己有权使用的同版本 PDF 的实际索引
 npm run test:api -- "/absolute/path/to/YOLO-HMC.pdf"
 ```
 
-- `test:desktop`：独立临时工作区、两页合成 PDF、本地模型响应及出版商页面。验证连续滚动、气泡宽度/收起、真实 Cookie 登录下载、递归关联、返回来源页和重启。它不验证真实学校登录。
-- `test:api`：默认用固定书目信息与真实千问、arXiv / Crossref 查询；指定 PDF 才测试真实索引。会产生少量接口用量，指定 PDF 时首页与检索所需文献信息会发往配置的模型接口。
-- 记录失败阶段：索引 / 检索网络 / 相关性 / 获取权限 / 下载 / 建树。网络错误不能当作论文无权限；候选标题和 URL 是判定依据，不比较模型说明逐字一致。
+默认使用代码内的公开书目信息，不读取本地论文。传入 PDF 时会提取并发送首页及研究所需上下文。该测试会调用真实模型、AI-Q 和学术来源，产生 API 用量。若连接已经运行的本机 AI-Q，可设置 `AIQ_SERVER_URL=http://127.0.0.1:18181`；该后台需已配置模型。
 
-## 机构登录专项测试（单独执行）
+通过标准：执行官方 `aiq-research`，保留带 URL 的研究报告，返回 `arXiv:2207.14284` 对应 HorNet，排除母论文，并给出关联原因。不要只看模型生成的解释，须核对候选标题和 URL。
 
-由用户选择学校确实订阅、且当前需要登录的 IEEE 论文。记录 DOI、访问方式（校园网/VPN/图书馆代理/机构 SSO）、是否先前已登录。
+## 固定检索样例
 
-1. 在 Paper Tree 获取窗口中使用机构登录，确认页面能访问全文。
-2. 点击出版商实际的 PDF 下载入口；只有浏览器开始下载且下载完成后，才应生成树节点。
-3. 关闭获取窗口后再次打开同一来源，检查有效会话能否复用；是否需重新登录由学校和出版商决定。
-4. 若应用内登录不兼容，使用系统浏览器下载，再「手动补入 PDF」。外部浏览器的下载不会被 Electron 捕获。
+| 源论文 | 框选内容 | 预期目标 / 依据 |
+| --- | --- | --- |
+| YOLO-HMC: An Improved Method for PCB Surface Defect Detection | 首页 `HorNet` | [HorNet](https://arxiv.org/abs/2207.14284)，缓存参考文献 [31] |
+| YOLO-HMC | 首页 `CARAFE` | [CARAFE](https://arxiv.org/abs/1905.02188)，缓存参考文献 [34] |
+| HorNet | 首页 `ConvNeXt` | [A ConvNet for the 2020s](https://arxiv.org/abs/2201.03545)，跨页方法引用 [43] |
+| CARAFE | 首页 `Feature Pyramid Network` | [Feature Pyramid Networks for Object Detection](https://arxiv.org/abs/1612.03144)，缓存参考文献 [21] |
 
-不能用这个用例推断“任意学校账号都可下载任意 IEEE 论文”。
+YOLO-HMC DOI 为 `10.1109/TIM.2024.3351241`；历史验收使用用户已有的 11 页 PDF（索引提取 45 条参考文献），仓库不附该文件。新使用者可直接导入公开 HorNet PDF，从 `ConvNeXt` 用例开始。引用编号和页码以对应 PDF 版本为准。
 
-## 多分支密度验收（真实论文）
+## 桌面验收步骤
 
-现已实际建立 15 个论文节点、14 条关联，一级入口为 CARAFE、YOLOv6、HorNet、CBAM、SSD，二级分别为 2、1、3、2、1 个节点。完整标题、URL 和来源页见 本文后面的实测记录。
+1. 导入论文，确认显示 PDF 原版面，主题和参考文献能建立索引。
+2. 连续滚动跨页，检查底部页码、缩放和普通阅读模式。
+3. 点击框选工具，拖框覆盖完整术语；拖动和松开后都能看到矩形；扫描图片/空白区域不触发检索。
+4. 点击框边关联按钮。结果气泡不改变 PDF 宽度；核对来源、检索意图、候选标题和 Skill 研究记录。
+5. 获取公开 PDF，检查下载完成后才生成子节点；从子论文继续探索，形成至少一条二级分支。
+6. 回到源论文，确认来源矩形进入视口；重开历史结果、缩放后检查标记仍贴合原文。
+7. 收起工作区、拖分隔线，检查图中节点适配视野，PDF 保持可用。
+8. 在**独立测试库**中改名、删除一个有子节点的分支；分别验证取消和确认，父论文的检索标记保留。
+9. 顶部切换语言，即时改变工具栏和提示；重启后保留语言。模型设置仍需要保存并重启。
+10. 重启后核对论文、关系、检索框和缓存仍存在。
 
-- 1480×980 窗口：全部展开的树内容高 482 CSS px，15 行同时可见。
-- 1050×700 窗口：树区可见高 395 CSS px，内容独立滚动，PDF 阅读区保持正常。
-- 收起 HorNet：15 行变为 12 行；展开恢复 15 行。
-- 关联气泡打开时，在 PDF 上按下鼠标准备新划选，气泡立即收起；阅读区宽度不变。
+同一个候选再次导入可能生成重复节点；只验证检索时，可在获取前停止。
 
-截图：[全展开](preview.png)。样例在 `.prototype-data/branching-demo`，已被 Git 忽略，不包含在提交源码中；原有工作区未修改。
+## 机构访问专项
 
-## 真实多分支树实测
+由用户选择确有订阅权限的论文，记录 DOI、校园网/VPN/图书馆代理/SSO 方式及是否已有会话。在获取窗口登录后点击实际 PDF 下载入口，再确认下载和建树；关闭后重开，检查 Cookie 是否仍有效。
 
-根论文：YOLO-HMC: An Improved Method for PCB Surface Defect Detection
+若站点不兼容内嵌窗口，使用系统浏览器下载，再手动补入。学校登录会话不是通用 API Token；元数据 API Key 不授予付费全文访问权。不得用模拟出版商回归宣称任意学校/IEEE 登录都已验证。
 
-使用现有 research / workflow 检索与建树函数；公开 PDF 由测试脚本下载后交给 importPaper。没有逐条模拟鼠标点击下载。原有用户工作区未修改。
+## 真实样例与已知问题
 
-| 源论文/概念 | 划选词 | 来源页 | 实际关联论文 |
-|---|---|---|---|
-| YOLO-HMC | CARAFE | 1 | [CARAFE: Content-Aware ReAssembly of FEatures](https://arxiv.org/abs/1905.02188v3) |
-| YOLO-HMC | YOLOv6 | 11 | [YOLOv6: A Single-Stage Object Detection Framework for Industrial Applications](https://arxiv.org/abs/2209.02976v1) |
-| YOLO-HMC | HorNet | 1 | [HorNet: Efficient High-Order Spatial Interactions with Recursive Gated Convolutions](https://arxiv.org/abs/2207.14284v3) |
-| YOLO-HMC | CBAM | 1 | [CBAM: Convolutional Block Attention Module](https://arxiv.org/abs/1807.06521v2) |
-| CARAFE | Feature Pyramid Network | 1 | [Feature Pyramid Networks for Object Detection](https://arxiv.org/abs/1612.03144v2) |
-| CBAM | Squeeze-and-Excitation | 4 | [Squeeze-and-Excitation Networks](https://arxiv.org/abs/1709.01507v4) |
-| YOLOv6 | RepVGG | 2 | [RepVGG: Making VGG-style ConvNets Great Again](https://arxiv.org/abs/2101.03697v3) |
-| YOLO-HMC | SSD | 2 | [SSD: Single Shot MultiBox Detector](https://arxiv.org/abs/1512.02325v5) |
-| HorNet | Swin Transformer | 2 | [Swin Transformer V2: Scaling Up Capacity and Resolution](https://arxiv.org/abs/2111.09883v2) |
-| HorNet | ResNet | 8 | [Deep Residual Learning for Image Recognition](https://arxiv.org/abs/1512.03385v1) |
-| CARAFE | Mask R-CNN | 1 | [Mask R-CNN](https://arxiv.org/abs/1703.06870v3) |
-| CBAM | ResNet | 1 | [Deep Residual Learning for Image Recognition](https://arxiv.org/abs/1512.03385v1) |
-| SSD | Faster R-CNN | 1 | [Faster R-CNN: Towards Real-Time Object Detection with Region Proposal Networks](https://arxiv.org/abs/1506.01497v3) |
-| HorNet | ConvNeXt | 1 | [A ConvNet for the 2020s](https://arxiv.org/abs/2201.03545v2) |
+2026-09-27 曾通过真实 UI 从空工作区建立 **5 篇论文 / 4 条关联**：
 
-共 15 个阅读节点、14 条关联；ResNet 经两条阅读路径到达，保留两个节点。Swin Transformer 分支实际候选是 Swin Transformer V2，完整标题可在悬停和阅读区核对。
-
-本机已生成样例（`.prototype-data/` 不随仓库提交；新克隆请按 本文前面的测试 SOP 建立阅读树）：
-```bash
-PAPER_TREE_DATA_DIR="$PWD/.prototype-data/branching-demo" npm start
+```text
+YOLO-HMC
+├── HorNet
+│   └── A ConvNet for the 2020s
+└── CARAFE
+    └── Feature Pyramid Networks for Object Detection
 ```
 
+前三次公开全文下载由应用捕获。FPN 的 IEEE 页面返回 418，随后从 [CVF 公开 PDF](https://openaccess.thecvf.com/content_cvpr_2017/papers/Lin_Feature_Pyramid_Networks_CVPR_2017_paper.pdf) 下载并手动补入；没有宣称这一分支全自动完成。过程中遇到过 OpenAlex 429 和 arXiv Atom 超时，当前精确 arXiv ID 改用摘要页，关键词使用 OpenAlex / Crossref。
+
+本机 `.prototype-data/branching-demo` 是该真实工作区，已被 Git 忽略，不属于新克隆的预置数据。截图保留真实历史，其中 HorNet 同一区域的多次检索标记会重叠；目前未实现标记归并。模型可能误判候选，下载也不自动验证学术身份。
+
+最新截图和操作解释见 [使用指南](usage.md)。本轮文档整理没有重新执行付费检索；历史联网验证、离线回归与文档截图三者应分别理解。

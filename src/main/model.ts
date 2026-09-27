@@ -1,9 +1,8 @@
 import { getDocument } from "pdfjs-dist/legacy/build/pdf.mjs";
-import type { PaperIndex } from "../shared/types";
-// Shared model call: paper metadata, search terms and candidate relevance.
+import { tr, type PaperIndex } from "../shared/types";
 export async function chat(system: string, user: string): Promise<string> {
   const { QWEN_API_KEY: key, QWEN_BASE_URL: baseUrl } = process.env;
-  if (!key || !baseUrl) throw new Error("请在 .env 配置千问接口。");
+  if (!key || !baseUrl) throw new Error(tr("请在设置中配置模型接口。", "Configure the model API in Settings."));
   const response = await fetch(`${baseUrl.replace(/\/$/, "")}/chat/completions`, {
     method: "POST",
     headers: { Authorization: `Bearer ${key}`, "Content-Type": "application/json" },
@@ -18,15 +17,14 @@ export async function chat(system: string, user: string): Promise<string> {
     }),
     signal: AbortSignal.timeout(60_000),
   });
-  if (!response.ok) throw new Error(`模型处理失败（HTTP ${response.status}）。`);
+  if (!response.ok) throw new Error(tr(`模型处理失败（HTTP ${response.status}）。`, `Model request failed (HTTP ${response.status}).`));
   const data = await response.json();
   return data.choices[0].message.content;
 }
 
 export async function jsonChat(system: string, user: string) {
-  return JSON.parse(
-    (await chat(system + " 只输出 JSON，不要 Markdown。", user)).replace(/^```(?:json)?\s*|\s*```$/g, ""),
-  );
+  const text = await chat(system + " 只输出 JSON，不要 Markdown。", user);
+  return JSON.parse(text.replace(/^```(?:json)?\s*|\s*```$/g, ""));
 }
 export async function indexPdf(bytes: Uint8Array): Promise<PaperIndex> {
   const loading = getDocument({ data: bytes, useSystemFonts: true });

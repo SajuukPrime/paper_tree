@@ -1,0 +1,46 @@
+# Minimal custom AI-Q profile. Model endpoint remains replaceable for DGX Spark.
+general:
+  use_uvloop: false
+  front_end:
+    _type: aiq_api
+    runner_class: aiq_api.plugin.AIQAPIWorker
+    db_url: sqlite+aiosqlite:///./paper-tree-jobs.db
+llms:
+  paper_model:
+    _type: openai
+    model_name: ${QWEN_MODEL:-qwen-flash}
+    base_url: ${QWEN_BASE_URL}
+    api_key: ${QWEN_API_KEY}
+    temperature: 0.1
+    max_tokens: 4096
+functions:
+  data_sources:
+    _type: data_source_registry
+    sources:
+      - id: papers
+        name: Academic papers
+        tools: [paper_search_tool]
+  paper_search_tool:
+    _type: paper_tree_search
+  intent_classifier:
+    _type: intent_classifier
+    llm: paper_model
+  shallow_research_agent:
+    _type: shallow_research_agent
+    llm: paper_model
+    enforce_citations: true
+    max_llm_turns: 5
+    max_tool_iterations: 3
+  deep_research_agent:
+    _type: deep_research_agent
+    orchestrator_llm: paper_model
+    source_router_llm: paper_model
+    researcher_llm: paper_model
+    planner_llm: paper_model
+    writer_llm: paper_model
+workflow:
+  _type: chat_deepresearcher_agent
+  enable_escalation: false
+  enable_clarifier: false
+  use_async_deep_research: false
+  checkpoint_db: ./paper-tree-checkpoints.db

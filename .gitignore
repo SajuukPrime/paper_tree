@@ -10,3 +10,6 @@ test-results/
 *.log
 # Local kickoff materials; not required to build or run the prototype.
 /input/
+backend/*.egg-info/
+__pycache__/
+*.py[cod]

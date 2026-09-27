@@ -12,14 +12,16 @@
     "test": "node --import tsx --test tests/*.test.ts",
     "test:api": "tsx scripts/test-api.ts",
     "test:desktop": "tsx scripts/test-desktop.ts",
-    "check:size": "node --import tsx scripts/check-size.ts"
+    "check:size": "node --import tsx scripts/check-size.ts",
+    "setup:aiq": "tsx scripts/setup-aiq.ts"
   },
   "dependencies": {
     "dotenv": "^17.2.3",
     "fast-xml-parser": "^5.11.1",
     "pdfjs-dist": "^6.3.289",
     "react": "^19.2.0",
-    "react-dom": "^19.2.0"
+    "react-dom": "^19.2.0",
+    "vis-network": "^10.1.2"
   },
   "devDependencies": {
     "@types/node": "^24.0.0",

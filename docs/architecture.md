@@ -1,54 +1,109 @@
-# 第一版实现说明
+# 架构与数据流
 
-## 结构与调用链
+[返回 README](../README.md) · [使用指南](usage.md) · [NVIDIA 接入](skills.md)
 
-这是 Electron 客户端：React 负责界面，preload 暴露少量 IPC，主进程负责文件、网络与模型调用。没有独立 Web 业务后端、SQL 服务或向量库。
+## 进程边界
 
-```text
-App / PdfReader / PaperTree
-  → preload IPC
-  → index.ts 注册入口
-  → workflow.ts 编排导入、索引、检索和建树
-      ├─ model.ts：PDF 文本提取与模型接口
-      ├─ research.ts：参考文献定位、论文检索与候选筛选
-      ├─ acquire.ts：获取窗口、浏览器会话与下载
-      └─ storage.ts：SQLite 和 PDF 文件
+Paper Tree 是 Electron 客户端。React 渲染界面；preload 暴露有限 IPC；Electron 主进程负责文件、数据库、模型调用、研究编排和下载。本机 AI-Q 是研究用的 Python 伴随进程，默认由应用启动并绑定 `127.0.0.1:18181`。模型 API 是独立服务，目前使用千问兼容接口。
+
+```mermaid
+flowchart TD
+  subgraph Desktop[Electron 客户端]
+    UI[App / PdfReader / PaperTree] --> IPC[preload · PaperTreeAPI]
+    IPC --> ENTRY[index.ts · IPC 与生命周期]
+    ENTRY --> FLOW[workflow.ts · 导入 / 索引 / 检索]
+    FLOW --> MODEL[model.ts · PDF 文本与模型请求]
+    FLOW --> RESEARCH[research.ts · 查询规划与候选筛选]
+    ENTRY --> GET[acquire.ts · 获取窗口与下载捕获]
+    GET --> FLOW
+    FLOW --> DB[storage.ts · SQLite 与 PDF]
+    ENTRY --> DB
+    RESEARCH --> SKILL[skills.ts · 官方 helper 适配]
+  end
+  SKILL --> HELPER[NVIDIA aiq-research / aiq.py]
+  HELPER --> AIQ[本机 AI-Q · NAT Agent]
+  AIQ --> TOOL[backend/paper_search.py]
+  MODEL --> API[OpenAI 兼容模型接口]
+  AIQ --> API
+  TOOL --> SOURCES[OpenAlex / Crossref / arXiv]
+  RESEARCH --> SOURCES
+  RESEARCH --> IEEE[可选 IEEE 元数据 API]
 ```
 
-传统开发部分是界面、IPC、存储和下载。AI 部分只有主题提取、检索标题生成、候选筛选；没有聊天 Agent 或向量 RAG。
+无需另起 Web 业务服务、SQL 服务或向量库。自部署模型尚未落地，当前架构只保留兼容接口替换位置。
 
-## 阅读与关联
+## 代码导航
 
-PDF.js 的 `PDFViewer` 提供连续多页阅读及文字层。选中文字后提交论文 ID、页码和原文。右侧结果气泡不改变 PDF 宽度，在正文上开始下一次划选时自动收起。
+| 文件 | 职责 | 类型 |
+| --- | --- | --- |
+| `src/renderer/App.tsx` | 工作区、设置、语言、编辑和结果气泡 | React UI |
+| `src/renderer/components/PdfReader.tsx` | PDF.js 连续阅读、矩形框选、标记和来源定位 | 阅读交互 |
+| `src/renderer/components/PaperTree.tsx` | vis-network 关系图与论文切换 | 可视化 |
+| `src/preload.ts` | `window.paperTree` IPC 桥接 | Electron |
+| `src/shared/types.ts` | Paper、Relation、Task、API 类型及中英文文本选择 | 共享约定 |
+| `src/main/index.ts` | 窗口、IPC、模型配置、语言偏好、删除确认、后台生命周期 | 应用入口 |
+| `src/main/workflow.ts` | 导入、索引去重、研究任务、选择候选和建树 | 业务编排 |
+| `src/main/storage.ts` | SQLite、PDF 文件、改名与分支删除 | 本地持久化 |
+| `src/main/model.ts` | PDF 文本提取、首页主题、OpenAI 兼容请求 | 模型调用 |
+| `src/main/research.ts` | 引用定位、短查询、元数据检索、去重和相关性筛选 | AI + 检索 |
+| `src/main/skills.ts` | 启动 AI-Q、执行官方 helper、读取报告及版本 | NVIDIA Skill 接入 |
+| `src/main/acquire.ts` | 获取窗口、持久会话、下载监听、手动导入配合 | 文件获取 |
+| `backend/aiq.yml` | 模型、Agent、数据源及本地数据库配置 | AI-Q 配置 |
+| `backend/paper_search.py` | 给 Agent 提供带来源的论文检索结果 | 自定义 NAT 工具 |
+| `vendor/nvidia-skills/` | 固定版本的官方 Skill、helper 与许可证 | 上游原件 |
 
-左侧每篇论文占一行，显示进入该论文的概念。分支可折叠，当前节点及祖先高亮；悬停查看完整标题和来源页。节点行高 30 px，行间距 2 px。左侧使用自有 `library-rail` 类名，避免与 PDF.js 样式冲突。
+## 一次探索的数据流
 
-## 索引与检索
+1. **导入**：`ImportInput` 携带文件名和 PDF 字节。检查文件头后写入本机，生成 `Paper`。不带 `taskId` 是根论文；带等待下载任务的 `taskId` 时生成子论文及关联。
+2. **索引**：读取论文时异步建立 `PaperIndex`。PDF.js 本地提取逐页文字和编号参考文献，模型读取首页生成标题与主题；按论文 ID 缓存。索引失败不阻止阅读。
+3. **框选**：文字层读取矩形内的完整词，生成 `ExpandInput`，包含论文 ID、页码、原文和相对页面的 `x/y/w/h`。这里没有 OCR。
+4. **查询规划**：先用原文专名及引用线索筛选缓存参考文献，再让模型生成检索模式、意图、术语和最多两条短查询。明确引用优先使用核实过的标题或 arXiv ID；机制问题走关键词。
+5. **官方 Skill**：`skills.ts` 调用 NVIDIA `aiq.py` 的 health/chat/status/report。AI-Q 使用论文工具生成带来源的研究报告；失败会让任务失败，不绕过 Skill。
+6. **候选筛选**：通过学术元数据接口获得真实候选，去掉自身和重复结果；模型结合选区、查询计划和研究报告筛选相关性。精确引用标题要求候选标题匹配。
+7. **获取与建树**：用户选择候选后任务进入 `waiting-pdf`。获取窗口下载成功或手动补入 PDF 后，保存子论文和 `Relation`，任务变为 `completed`。
 
-1. 首次读取 PDF 时后台建立索引：本地提取逐页文本和编号参考文献，去掉重复引用编号；模型读取首页，提取标题和主题。索引失败不阻止阅读，检索时可重试。
-2. 优先将选中概念与参考文献标题按词匹配，没有命中再查当前页附近的引用编号，避免把 `SSD` 错配到 `process defect` 之类的连续字符。
-3. 有 arXiv ID 则直接定位；其他情况由模型提取或展开完整论文标题。arXiv 按标题搜索，Crossref 按书目信息搜索；配置 Key 后并行查询 IEEE。
-4. 先按标题或 DOI 排除本篇、合并同名候选，再让模型返回现有候选的索引和关联原因；允许没有相关候选。
-5. 下载成功后保存论文和父子关系。每条边保留源论文、目标论文、选中文字和页码。由不同路径到达同一论文时，仍保留独立树节点。
+```mermaid
+stateDiagram-v2
+  [*] --> researching: 框选并提交
+  researching --> choosing: 研究与候选筛选成功
+  researching --> failed: 研究或网络失败
+  choosing --> waiting_pdf: 选择候选
+  waiting_pdf --> completed: PDF 导入并建树
+  completed --> waiting_pdf: 从同一批候选再选一篇
+  failed --> researching: 用户重试（创建新任务）
+```
 
-`storage.ts` 使用 Node 内置 SQLite：`state` 保存论文、关系和任务的 JSON；`paper_index` 按论文 ID 缓存标题、主题、DOI、页文本和参考文献。PDF 单独存放。旧 `workspace.json` 在数据库没有状态时迁移，原文件保留。
+数据库中的等待状态实际名称是 `waiting-pdf`。仅访问网页不完成任务；下载失败时保留等待状态，供重新下载或手动补入。
 
-## 下载与学校登录
+## 本地数据
 
-`acquire.ts` 只处理当前获取窗口的浏览器下载：公开候选通过 `webContents.downloadURL` 发起；其余由用户登录并点击出版商下载入口。`session.will-download` 设置保存路径，下载完成后校验 PDF 文件头、保存文件并建立关联。
+默认目录为 `app.getPath("userData")/workspace`；设置 `PAPER_TREE_DATA_DIR` 时，工作区直接使用该目录，Electron 会话数据也使用这个 userData 位置。
 
-它不监控整个电脑的下载目录。系统浏览器中的文件通过“手动补入 PDF”关联。网页会话由获取窗口持有，能否跨重启复用取决于站点 Cookie 的有效期。
+```text
+工作区目录/
+├── workspace.sqlite
+│   ├── state        # 论文、关联和研究任务的 JSON
+│   ├── paper_index  # 每篇论文的标题、主题、页文本和参考文献
+│   └── settings     # URL、模型名、加密 Key、语言
+└── papers/<paper-id>.pdf
+```
 
-学校网页登录会话不是通用的 API Token。`IEEE_API_KEY` 只用于元数据检索；付费全文 API 需要机构另外开通授权，当前未实现。依据：[IEEE 机构访问说明](https://ieeexplore.ieee.org/Xplorehelp/administrators-and-librarians/account-management)、[全文 API 授权](https://developer.ieee.org/Chargeable_Full_Text_Requests)。
+- `Paper` 是一个阅读节点；同一论文经不同路径导入仍可生成多个节点。
+- `Relation` 保存 sourceId、targetId、来源页码、原文和矩形。它表示探索关系，不自动证明学术引用。
+- `Task` 保存选区、计划、候选、选中项、状态及 `SkillRun`；后者含报告、版本号、地址、时间和可能的 job ID。
+- 改名只改变显示标题，并标记 `renamed`；不改原始索引。删除按后续分支级联处理，保留父论文上的检索记录。
+- 旧 `workspace.json` 仅用于首次迁移，没有 SQLite 状态时才采用；应用仍兼容这一迁移路径。
 
-## NVIDIA 接入：待完成
+## 配置、语言和生命周期
 
-项目要求使用 NVIDIA 官方 Agent Skills，并在 DGX Spark 上部署、通过 NVIDIA 软件提供模型推理；当前尚未完成。模型不计划微调。
+首次创建设置时迁移环境变量；以后本机设置优先。API Key 用 Electron `safeStorage` 加密，renderer 只收到 `hasKey`，不收到已保存的明文 Key。保存 API 配置会重启，确保主进程和新启动的 AI-Q 使用同一配置。
 
-拟采用官方 `aiq-research`，它需要可达的 AI-Q 后端。可以由 Electron 启动仅绑定 `127.0.0.1` 的伴随进程，等待健康检查后执行官方 helper，退出时只停止本次应用启动的进程。首次仍需安装 Python/AI-Q、配置模型和至少一个检索源；是否兼容现有千问需要实测。该方案尚未实现。
+语言选择是单独 IPC，立即写入设置并更新 renderer 和主进程文案，不重启模型后台。翻译文本与代码就近维护，PDF、原始标题和已有生成内容不被自动翻译。
 
-官方原件未被当前源码引用，现与许可证一起保存在本地 `input/archive/first-prototype-history.zip`，不作为第一版运行依赖。实际接入时应重新引入并验证，不能用保存 Skill 文件代替执行证据。
+AI-Q 启动目录由 `AIQ_REPO` 指定，默认 `.prototype-data/aiq`。应用只停止自己启动的进程；指定 `AIQ_SERVER_URL` 连接已有本机后台时，其生命周期和模型环境由启动者管理。
 
-- [NVIDIA Skills](https://github.com/NVIDIA/skills)，此前保存版本：`ef46204b2605c237c58e8eaf706bbed615462b75`。
-- [aiq-research 原件](https://github.com/NVIDIA/skills/blob/ef46204b2605c237c58e8eaf706bbed615462b75/skills/aiq-research/SKILL.md)。脚本声明的 Apache-2.0 和 CC-BY-4.0 许可证随本地原件保存。
-- [AI-Q Blueprint](https://github.com/NVIDIA-AI-Blueprints/aiq)。推理服务与 AI-Q 研究后端是两个独立角色。
+获取窗口使用独立持久会话 `persist:paper-acquisition`，仅捕获该窗口触发的下载。系统浏览器下载需要手动补入；不把学校网页登录 Cookie 转换为通用 Token。
+
+## 当前范围
+
+已经实现的是短研究辅助的论文探索闭环。尚未实现 OCR、库内语义检索、自动合并论文身份、重复选区归并、安装包及 DGX Spark 推理部署。模型首页摘要和研究说明仍按当前提示词生成；UI 切换语言不重写这些内容。

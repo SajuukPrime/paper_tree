@@ -1,6 +1,10 @@
 import { contextBridge, ipcRenderer } from "electron";
 import type { PaperTreeAPI, Update } from "./shared/types";
 const api: PaperTreeAPI = {
+  language: (value) => ipcRenderer.invoke("language", value),
+  settings: (value) => ipcRenderer.invoke("settings", value),
+  renamePaper: (id, title) => ipcRenderer.invoke("paper:rename", id, title),
+  deletePaper: (id) => ipcRenderer.invoke("paper:delete", id),
   loadWorkspace: () => ipcRenderer.invoke("workspace:load"),
   importPaper: (input) => ipcRenderer.invoke("paper:import", input),
   readPdf: (id) => ipcRenderer.invoke("paper:read", id),

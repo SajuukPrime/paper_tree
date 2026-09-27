@@ -1,6 +1,7 @@
 import { config } from "dotenv";
 import assert from "node:assert/strict";
 import { readFile } from "node:fs/promises";
+import { stopSkills } from "../src/main/skills";
 import { indexPdf } from "../src/main/model";
 import { research, referenceFor } from "../src/main/research";
 config({ quiet: true });
@@ -17,12 +18,13 @@ const index = process.argv[2]
     };
 const input = { paperId: "test", page: 1, selectedText: "HorNet" };
 assert(referenceFor(input, index)?.includes("2207.14284"));
-const result = await research(input, index, console.log);
+const result = await research(input, index, console.log).finally(stopSkills);
+assert.equal(result.skill.name, "aiq-research");
+assert.match(result.skill.report, /https?:\/\//, "AI-Q report must retain source URLs");
 assert(result.candidates.some((c) => c.url.includes("2207.14284")));
 assert(result.candidates.every((c) => c.title !== index.title && c.reason));
 console.log({
-  title: index.title,
-  references: index.references.length,
+  skill: { name: result.skill.name, endpoint: result.skill.endpoint, revision: result.skill.revision },
   candidates: result.candidates.map((c) => ({ title: c.title, access: c.access, reason: c.reason })),
 });
-console.log("PASS: reference-first HorNet lookup + real model relevance screening.");
+console.log("PASS: NVIDIA aiq-research + reference-first HorNet lookup + model relevance screening.");

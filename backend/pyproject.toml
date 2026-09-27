@@ -1,0 +1,11 @@
+[build-system]
+requires = ["setuptools>=64"]
+build-backend = "setuptools.build_meta"
+[project]
+name = "paper-tree-aiq-tools"
+version = "0.1.0"
+requires-python = ">=3.11"
+[project.entry-points."nat.plugins"]
+paper_tree = "paper_search"
+[tool.setuptools]
+py-modules = ["paper_search"]

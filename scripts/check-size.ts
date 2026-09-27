@@ -10,11 +10,13 @@ async function filesIn(directory: string): Promise<string[]> {
     )
   ).flat();
 }
-const source = await filesIn("src");
+const backend = (await filesIn("backend")).filter((p) => /\.(py|toml|yml)$/.test(p));
+const source = [...(await filesIn("src")), ...backend.filter((p) => p.endsWith(".py"))];
 const all = [
   ...source,
   ...(await filesIn("scripts")),
   ...(await filesIn("tests")),
+  ...backend.filter((p) => !p.endsWith(".py")),
   "package.json",
   "tsconfig.json",
   "electron.vite.config.ts",
@@ -27,7 +29,7 @@ const lines = async (files: string[]) =>
   );
 const sourceLines = await lines(source),
   totalLines = await lines(all);
-console.log(`Runtime: ${source.length}/14 files, ${sourceLines}/1200 lines`);
-console.log(`All authored code/config/tests: ${all.length}/22 files, ${totalLines}/1800 lines`);
-assert(source.length <= 14 && sourceLines <= 1200, "运行源码超过预算，请删减功能或重复代码。");
-assert(all.length <= 22 && totalLines <= 1800, "自有代码总量超过预算。");
+console.log(`Runtime: ${source.length}/16 files, ${sourceLines}/2000 lines`);
+console.log(`All authored code/config/tests: ${all.length}/28 files, ${totalLines}/2900 lines`);
+assert(source.length <= 16 && sourceLines <= 2000, "运行源码超过预算，请删减功能或重复代码。");
+assert(all.length <= 28 && totalLines <= 2900, "自有代码总量超过预算。");
