@@ -19,6 +19,7 @@ const index = process.argv[2]
 const input = { paperId: "test", page: 1, selectedText: "HorNet" };
 assert(referenceFor(input, index)?.includes("2207.14284"));
 const result = await research(input, index, console.log).finally(stopSkills);
+assert(result.skill);
 assert.equal(result.skill.name, "aiq-research");
 assert.match(result.skill.report, /https?:\/\//, "AI-Q report must retain source URLs");
 assert(result.candidates.some((c) => c.url.includes("2207.14284")));

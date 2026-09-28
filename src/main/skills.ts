@@ -22,7 +22,7 @@ async function helper(command: string, ...args: string[]) {
     [join(root(), "vendor/nvidia-skills/aiq-research/scripts/aiq.py"), command, ...args],
     {
       env: { ...process.env, AIQ_SERVER_URL: endpoint() },
-      timeout: command === "chat" ? 600_000 : 120_000,
+      timeout: command === "chat" ? 90_000 : 120_000,
       maxBuffer: 2 * 1024 * 1024,
     },
   );

@@ -1,4 +1,4 @@
-import { tr, type SelectionRect } from "../../shared/types";
+import { tr, clippedRows, type SelectionRect } from "../../shared/types";
 import { createPortal } from "react-dom";
 import { useEffect, useRef, useState } from "react";
 import { getDocument, GlobalWorkerOptions } from "pdfjs-dist";
@@ -8,14 +8,14 @@ import "pdfjs-dist/web/pdf_viewer.css";
 GlobalWorkerOptions.workerSrc = workerUrl;
 const positions = new Map<string, { page: number; ratio: number }>();
 function pageRect(sheet: HTMLElement) {
-  const r = sheet.getBoundingClientRect();
-  return new DOMRect(r.x + sheet.clientLeft, r.y + sheet.clientTop, sheet.clientWidth, sheet.clientHeight);
+  return (sheet.querySelector(".canvasWrapper") || sheet).getBoundingClientRect();
 }
 export default function PdfReader({
   paperId,
   marks,
   jump,
   onMark,
+  onDeleteMark,
   page,
   onPage,
   onAssociate,
@@ -25,15 +25,18 @@ export default function PdfReader({
   marks: { id: string; page: number; selectedText: string; status: string; rect?: SelectionRect }[];
   jump: { page: number; text: string; token: number; rect?: SelectionRect };
   onMark: (id: string) => void;
+  onDeleteMark: (id: string) => void;
   page: number;
   onPage: (page: number) => void;
   onAssociate: (text: string, page: number, rect: SelectionRect) => void;
   busy: boolean;
 }) {
   const [boxing, setBoxing] = useState(false);
-  const [box, setBox] = useState<(SelectionRect & { sheet: HTMLElement; text: string }) | null>(null);
+  const [box, setBox] = useState<(SelectionRect & { sheet: HTMLElement; text: string; image?: string; pending?: boolean }) | null>(null);
   const drag = useRef<{ sheet: HTMLElement; x: number; y: number } | null>(null);
+  const recognition = useRef(0);
   const clearBox = () => {
+    recognition.current++;
     drag.current = null;
     setBox(null);
   };
@@ -44,7 +47,7 @@ export default function PdfReader({
       y: Math.max(0, Math.min(1, (e.clientY - r.top) / r.height)),
     };
   };
-  function finishBox(e: React.PointerEvent<HTMLDivElement>) {
+  async function finishBox(e: React.PointerEvent<HTMLDivElement>) {
     const start = drag.current;
     if (!start) return;
     const end = point(e, start.sheet),
@@ -58,28 +61,24 @@ export default function PdfReader({
       clearBox();
       return;
     }
-    // Snap intersected words to their full spelling, preserving academic names.
-    const text = [...start.sheet.querySelectorAll(".textLayer span")]
-      .flatMap((span) => {
-        const node = span.firstChild;
-        if (!node || node.nodeType !== Node.TEXT_NODE) return [];
-        return [...node.textContent!.matchAll(/\S+/g)].flatMap((word) => {
-          const range = new Range();
-          range.setStart(node, word.index!);
-          range.setEnd(node, word.index! + word[0].length);
-          const c = range.getBoundingClientRect(),
-            cy = (c.top + c.bottom) / 2;
-          return c.right > r.left + x * r.width &&
-            c.left < r.left + (x + w) * r.width &&
-            cy >= r.top + y * r.height &&
-            cy <= r.top + (y + h) * r.height
-            ? [word[0]]
-            : [];
-        });
-      })
-      .join(" ");
-    setBox({ sheet: start.sheet, x, y, w, h, text });
-    onPage(Number(start.sheet.dataset.pageNumber));
+    // Coordinates only crop the rendered page; the vision model reads the pixels.
+    const token = ++recognition.current;
+    try {
+      const source = start.sheet.querySelector("canvas")!;
+      const crop = document.createElement("canvas");
+      crop.width = Math.max(1, Math.round(w * source.width));
+      crop.height = Math.max(1, Math.round(h * source.height));
+      crop.getContext("2d")!.drawImage(source, x * source.width, y * source.height, w * source.width, h * source.height, 0, 0, crop.width, crop.height);
+      const ctx = crop.getContext("2d")!;
+      ctx.fillStyle = "white";
+      for (const [top, height] of clippedRows(ctx.getImageData(0, 0, crop.width, crop.height).data, crop.width, crop.height)) ctx.fillRect(0, top, crop.width, height);
+      const image = crop.toDataURL("image/png"), area = { sheet: start.sheet, x, y, w, h, image };
+      setBox({ ...area, text: "", pending: true });
+      const text = await window.paperTree.recognize(image);
+      if (token !== recognition.current || !start.sheet.isConnected) return;
+      setBox({ ...area, text, pending: false });
+      onPage(Number(start.sheet.dataset.pageNumber));
+    } catch (e) { if (token === recognition.current) { setError(String(e)); setBox(null); } }
   }
   const host = useRef<HTMLDivElement>(null);
   const viewer = useRef<PDFViewer | null>(null);
@@ -88,6 +87,8 @@ export default function PdfReader({
   annotations.current = marks;
   const markClick = useRef(onMark);
   markClick.current = onMark;
+  const removeMark = useRef(onDeleteMark);
+  removeMark.current = onDeleteMark;
   const paint = () => {
     host.current?.querySelectorAll<HTMLElement>(".page").forEach((sheet) => {
       sheet.querySelectorAll(".paper-mark").forEach((element) => element.remove());
@@ -103,6 +104,14 @@ export default function PdfReader({
         badge.onpointerdown = (e) => e.stopPropagation();
         badge.onclick = () => markClick.current(mark.id);
         frame.append(badge);
+        const remove = document.createElement("button");
+        remove.className = "delete-mark";
+        remove.textContent = "×";
+        remove.title = tr("删除标记（保留关联论文）", "Delete mark (keep linked papers)");
+        remove.setAttribute("aria-label", remove.title);
+        remove.onpointerdown = (e) => e.stopPropagation();
+        remove.onclick = () => removeMark.current(mark.id);
+        frame.append(remove);
         sheet.append(frame);
         if (
           pending.current.page === mark.page &&
@@ -188,7 +197,7 @@ export default function PdfReader({
     if (jump.page && viewer.current?.pagesCount) viewer.current.scrollPageIntoView({ pageNumber: jump.page });
     paint();
   }, [jump]);
-  useEffect(paint, [marks, document.documentElement.lang]);
+  useEffect(paint, [marks, busy, document.documentElement.lang]);
   return (
     <section
       className="reader"
@@ -221,6 +230,8 @@ export default function PdfReader({
             if (!boxing || e.button !== 0) return;
             const sheet = (e.target as HTMLElement).closest<HTMLElement>(".page");
             if (!sheet) return;
+            clearBox();
+            setError("");
             e.preventDefault();
             window.getSelection()?.removeAllRanges();
             e.currentTarget.focus();
@@ -301,10 +312,11 @@ export default function PdfReader({
             }}
           >
             {!drag.current && (
-              <div className="box-actions" onPointerDown={(e) => e.stopPropagation()}>
+              <div className="box-actions" style={{ left: Math.min(0, (1 - box.x) * box.sheet.clientWidth - 280), right: "auto" }} onPointerDown={(e) => e.stopPropagation()}>
+                <div className="selection-preview">{box.image && <img src={box.image} alt={tr("实际框选截图", "Selected image")} />}<textarea aria-label={tr("识别原文", "Recognized text")} rows={2} disabled={box.pending} placeholder={box.pending ? tr("正在识别框内图片…", "Reading selected image…") : tr("框内未读取到文字", "No text in selection")} value={box.text} onChange={(e) => setBox({ ...box, text: e.target.value })} /></div>
                 <button
                   disabled={!box.text || busy}
-                  title={box.text || tr("此区域没有可读取文字；扫描图片 OCR 尚未接入", "No readable text in this area; OCR is not available yet")}
+                  title={box.text || tr("先识别框内图片，再检索关联论文", "Read the selected image before searching")}
                   onClick={() => {
                     const { x, y, w, h } = box;
                     onAssociate(box.text, Number(box.sheet.dataset.pageNumber), { x, y, w, h });

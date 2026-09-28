@@ -30,6 +30,10 @@ export function createStorage(directory: string) {
       }
     },
     get: () => workspace,
+    async deleteMark(id: string) {
+      workspace.tasks = workspace.tasks.filter((task) => task.id !== id);
+      await this.save();
+    },
     settings(value?: object) {
       if (value) db.prepare("INSERT OR REPLACE INTO settings VALUES (1, ?)").run(JSON.stringify(value));
       const row = db.prepare("SELECT json FROM settings WHERE id=1").get();

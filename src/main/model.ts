@@ -1,18 +1,18 @@
 import { getDocument } from "pdfjs-dist/legacy/build/pdf.mjs";
 import { tr, type PaperIndex } from "../shared/types";
-export async function chat(system: string, user: string): Promise<string> {
+export async function chat(system: string, user: string, image?: string): Promise<string> {
   const { QWEN_API_KEY: key, QWEN_BASE_URL: baseUrl } = process.env;
   if (!key || !baseUrl) throw new Error(tr("请在设置中配置模型接口。", "Configure the model API in Settings."));
   const response = await fetch(`${baseUrl.replace(/\/$/, "")}/chat/completions`, {
     method: "POST",
     headers: { Authorization: `Bearer ${key}`, "Content-Type": "application/json" },
     body: JSON.stringify({
-      model: process.env.QWEN_MODEL || "qwen-flash",
+      model: (image ? process.env.QWEN_VISION_MODEL : process.env.QWEN_MODEL) || "qwen-flash",
       messages: [
         { role: "system", content: system },
-        { role: "user", content: user },
+        { role: "user", content: image ? [{ type: "text", text: user }, { type: "image_url", image_url: { url: image } }] : user },
       ],
-      temperature: 0.2,
+      temperature: image ? 0 : 0.2,
       max_tokens: 1200,
     }),
     signal: AbortSignal.timeout(60_000),
@@ -22,8 +22,8 @@ export async function chat(system: string, user: string): Promise<string> {
   return data.choices[0].message.content;
 }
 
-export async function jsonChat(system: string, user: string) {
-  const text = await chat(system + " 只输出 JSON，不要 Markdown。", user);
+export async function jsonChat(system: string, user: string, image?: string) {
+  const text = await chat(system + " 只输出 JSON，不要 Markdown。", user, image);
   return JSON.parse(text.replace(/^```(?:json)?\s*|\s*```$/g, ""));
 }
 export async function indexPdf(bytes: Uint8Array): Promise<PaperIndex> {

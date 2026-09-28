@@ -20,7 +20,7 @@ export default function App() {
   const [page, setPage] = useState(1);
   const [libraryOpen, setLibraryOpen] = useState(true);
   const [filter, setFilter] = useState("");
-  const [split, setSplit] = useState(42);
+  const [split, setSplit] = useState(100 / 3);
   const [jump, setJump] = useState<{ page: number; text: string; token: number; rect?: SelectionRect }>({
     page: 0,
     text: "",
@@ -143,6 +143,7 @@ export default function App() {
               onChange={(e) => setSettings({ ...settings, key: e.target.value })} /></label>
             <label>{tr("模型名", "Model")}<input required value={settings.model}
               onChange={(e) => setSettings({ ...settings, model: e.target.value })} /></label>
+            <label>{tr("图片识别模型（同一接口）", "Vision model (same API)")}<input value={settings.visionModel || ""} onChange={(e) => setSettings({ ...settings, visionModel: e.target.value })} /></label>
             <small>{tr("配置保存在本机。保存后应用会重启，让模型与 NVIDIA Agent 使用同一配置。", "Saved on this device. Saving API settings restarts the app to apply them to the model and NVIDIA Agent.")}</small>
           </> : <label>{tr("标题", "Title")}<textarea aria-label={tr("标题", "Title")} rows={3} autoFocus required value={title} onChange={(e) => setTitle(e.target.value)} /></label>}
           {error && <p role="alert">{error}</p>}
@@ -267,6 +268,7 @@ export default function App() {
                   key={paper.id}
                   paperId={paper.id}
                   marks={searches}
+                  onDeleteMark={(id) => void run(async () => { await window.paperTree.deleteMark(id); setTaskId(""); setResultsOpen(false); })}
                   jump={jump}
                   onMark={(id) => {
                     const mark = searches.find((t) => t.id === id)!;
@@ -320,7 +322,7 @@ export default function App() {
                         <p style={{ whiteSpace: "pre-wrap" }}>{task.skill.report}</p>
                       </details>
                     )}
-                    {task.report && <p>{task.report}</p>}
+                    {task.report && <details><summary>{tr("检索来源与筛选统计", "Sources and selection counts")}</summary><p>{task.report}</p></details>}
                   </div>
                 )}
                 {task?.status === "waiting-pdf" ? (
@@ -339,26 +341,15 @@ export default function App() {
                 ) : (
                   task?.candidates.map((candidate, index) => (
                     <article className="candidate" key={candidate.url + index}>
-                      <small>
-                        {candidate.source} · {candidate.year || tr("年份未提供", "Year unavailable")}
-                      </small>
+                      <small>{index + 1}. {candidate.source} · {candidate.year || tr("年份未提供", "Year unavailable")} · {candidate.access === "open" ? tr("公开全文", "Open access") : candidate.access === "subscription" ? tr("需要订阅权限", "Subscription required") : tr("全文权限待确认", "Access not verified")}</small>
                       <h3>{candidate.title}</h3>
-                      {workspace.papers.some((p) => p.sourceUrl === candidate.url) && <small>{tr("✓ 已加入论文库", "✓ In your library")}</small>}
-                      <p>{candidate.authors}</p>
+                      {candidate.relevance !== undefined && <small>{tr("相关性评分", "Relevance score")} {candidate.relevance}/100</small>}
                       <p>{candidate.reason}</p>
-                      <small>
-                        {candidate.access === "open"
-                          ? tr("公开全文", "Open access")
-                          : candidate.access === "subscription"
-                            ? tr("需要订阅权限", "Subscription required")
-                            : tr("全文权限待确认", "Access not verified")}
-                      </small>
-                      <button
-                        disabled={busy}
-                        onClick={() => void run(() => window.paperTree.acquire(task!.id, candidate))}
-                      >
-                        {candidate.access === "open" && candidate.pdfUrl ? tr("获取 PDF 并关联", "Get PDF and link") : tr("打开页面，下载并关联", "Open page to download and link")} ↗
-                      </button>
+                      {workspace.papers.some((p) => p.sourceUrl === candidate.url) && <small>{tr("✓ 已加入论文库", "✓ In your library")}</small>}
+                      <div className="candidate-actions">
+                        <button disabled={busy} onClick={() => void run(() => window.paperTree.acquire(task!.id, candidate))}>{tr("选择并关联", "Select and link")} ↗</button>
+                        <details><summary>{tr("更多", "More")}</summary><p>{candidate.authors}</p><button disabled={busy} onClick={() => void run(async () => { await window.paperTree.acquire(task.id, candidate, true); pickFile(task.id); })}>{tr("导入已有 PDF 并关联", "Link an existing PDF")}</button></details>
+                      </div>
                     </article>
                   ))
                 )}

@@ -7,12 +7,14 @@ Paper Tree 使用 NVIDIA 官方 **`aiq-research`** Skill，为选中的论文内
 ## 如何参与论文检索
 
 ```text
-框选原文 → 模型整理检索目标 → NVIDIA aiq-research
+框选截图 → 视觉模型识别原文 → 模型整理检索目标 → NVIDIA aiq-research
 → 本机 AI-Q 调用论文搜索工具 → 生成带来源的报告
 → 检索候选并筛选相关性 → 选择、下载和关联
 ```
 
 论文搜索工具使用 OpenAlex、Crossref 和 arXiv。模型负责理解选区与评估相关性，候选标题和获取地址来自学术来源。每次成功研究会保存 Skill 版本、报告和调用时间，便于回看探索依据。
+
+![在论文关联面板中查看 NVIDIA aiq-research 的来源报告](images/research-record.png)
 
 ## 组件与来源
 

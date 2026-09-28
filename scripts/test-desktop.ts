@@ -42,21 +42,17 @@ let indexed = 0;
 const server = createServer((request, response) => {
   const url = new URL(request.url!, "http://localhost");
   if (url.pathname === "/chat/completions") {
-    response.setHeader("Content-Type", "application/json");
-    response.end(
-      JSON.stringify({
-        choices: [
-          {
-            message: {
-              content: JSON.stringify({
-                title: ["Paper Tree prototype fixture", "Child paper", "Grandchild paper"][indexed++],
-                topic: "对比学习",
-              }),
-            },
-          },
-        ],
-      }),
-    );
+    let body = "";
+    request.on("data", (chunk) => { body += chunk; });
+    request.on("end", () => {
+      const input = JSON.parse(body);
+      const image = Array.isArray(input.messages[1].content);
+      if (image) assert(input.messages[1].content.some((part: any) => part.image_url?.url.startsWith("data:image/png;base64,")));
+      const result = image ? { text: "Contrastive learning compares similar and dissimilar examples." }
+        : { title: ["Paper Tree prototype fixture", "Child paper", "Grandchild paper"][indexed++], topic: "对比学习" };
+      response.setHeader("Content-Type", "application/json");
+      response.end(JSON.stringify({ choices: [{ message: { content: JSON.stringify(result) } }] }));
+    });
     return;
   }
   if (url.pathname === "/login") {
@@ -135,7 +131,8 @@ try {
   assert.equal(await page.getByLabel("框选区域", { exact: true }).count(), 1);
   await page.mouse.up();
   await page.getByRole("button", { name: "关联框内内容" }).waitFor();
-  assert.equal(await page.locator("textarea").count(), 0);
+  await page.waitForFunction(() => (document.querySelector('[aria-label="识别原文"]') as HTMLTextAreaElement)?.value.startsWith("Contrastive learning"));
+  assert.equal(await page.getByLabel("识别原文").count(), 1);
   assert.equal(await page.getByRole("button", { name: "关联框内内容" }).isEnabled(), true);
   await page.getByText("对比学习 · 0 条参考文献").waitFor();
   await page.screenshot({ path: join(directory, "pdf-selection.png") });
@@ -215,7 +212,7 @@ try {
   await page.getByRole("button", { name: "关联结果" }).click();
   await page.screenshot({ path: join(directory, "bubble.png") });
   const browserPromise = app.waitForEvent("window");
-  await page.getByRole("button", { name: "打开页面，下载并关联" }).click();
+  await page.getByRole("button", { name: "选择并关联" }).click();
   const browser = await browserPromise;
   await browser.getByRole("link", { name: "Sign in" }).click();
   assert.equal(await browser.evaluate(() => typeof window.paperTree), "undefined");
@@ -237,7 +234,7 @@ try {
   captureErrors();
   await page.getByLabel("切换论文").selectOption({ label: "Child paper" });
   await page.getByRole("button", { name: "关联结果" }).click();
-  await page.getByRole("button", { name: "获取 PDF 并关联" }).click();
+  await page.getByRole("button", { name: "选择并关联" }).click();
   await page.getByRole("heading", { name: "Grandchild paper", exact: true, level: 1 }).waitFor();
   await page.locator(".textLayer span").first().waitFor();
   assert.equal(authenticatedDownloads, 2);
@@ -337,7 +334,7 @@ try {
   await page.getByRole("dialog", { name: "模型设置" }).waitFor();
   assert.equal(await page.getByLabel("接口 URL").inputValue(), origin);
   assert.equal(await page.getByLabel("API Key").inputValue(), "");
-  await page.getByLabel("模型名").fill("new-fixture-model");
+  await page.getByLabel("模型名", { exact: true }).fill("new-fixture-model");
   await page.getByLabel("API Key").fill("updated-test-only");
   // Suppress automatic relaunch only in this isolated fixture; launch explicitly below.
   await app.evaluate(({ app }) => {
@@ -353,7 +350,7 @@ try {
   page = await app.firstWindow();
   await page.getByLabel("设置", { exact: true }).click();
   await page.getByRole("dialog", { name: "模型设置" }).waitFor();
-  assert.equal(await page.getByLabel("模型名").inputValue(), "new-fixture-model");
+  assert.equal(await page.getByLabel("模型名", { exact: true }).inputValue(), "new-fixture-model");
   assert.equal(await page.getByLabel("API Key").inputValue(), "");
   assert(await app.evaluate(() => process.env.QWEN_API_KEY === "updated-test-only"));
   const settingsDb = database();

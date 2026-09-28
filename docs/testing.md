@@ -59,7 +59,7 @@ python3 deploy/smoke.py
 | `npm run dev` | 启动开发模式 |
 | `npm run build` | 检查代码规模、TypeScript 并构建应用 |
 | `npm start` | 启动已构建的 Electron 应用 |
-| `npm test` | 验证存储、查询规划与官方 Skill helper 协议 |
+| `npm test` | 验证存储、框选处理、查询规划、相关性排序与官方 Skill helper 协议 |
 | `npm run test:desktop` | 在独立临时工作区运行桌面回归，使用模拟模型、出版商和合成 PDF |
 | `npm run test:api` | 调用真实模型、AI-Q 与公开论文来源 |
 
