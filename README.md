@@ -6,6 +6,31 @@ Paper Tree 是一款桌面论文阅读应用。在 PDF 中框选陌生概念或�
 
 ![Paper Tree：PDF 阅读与多层论文关系](docs/images/spark-27b-tree.png)
 
+## 项目与技术说明
+
+| 文档 | 重点内容 |
+| --- | --- |
+| **[项目说明](docs/project.md)** | 阅读痛点、完整使用场景、核心亮点、架构思路与实现方案 |
+| **[部署、优化与技术栈](docs/deployment.md)** | DGX Spark 本地算力、TensorRT-LLM 容器、模型配置、推理优化及技术栈清单 |
+| **[Agent Skills 设计与集成](docs/skills.md)** | NVIDIA 官方 Skill、AI-Q / NAT 研究流程、论文工具适配与来源记录 |
+
+延伸阅读：[使用指南](docs/usage.md) · [架构说明](docs/architecture.md) · [示例与验证](docs/testing.md)
+
+## NVIDIA 技术如何参与阅读
+
+Paper Tree 将 **NVIDIA Agent Skills 的研究执行**与 **DGX Spark 上的模型推理**连接到同一条阅读流程中：
+
+| 技术 | 在项目中的作用 | 实现入口 |
+| --- | --- | --- |
+| **NVIDIA `aiq-research` Agent Skill** | 调用研究后台，返回带来源的报告；报告和 Skill 版本随探索记录保存 | [官方 SKILL.md](vendor/nvidia-skills/aiq-research/SKILL.md)、[桌面适配](src/main/skills.ts) |
+| **NVIDIA AI-Q Blueprint / NeMo Agent Toolkit（NAT）** | 运行研究 Agent，组织模型和论文检索工具，为当前选区寻找相关工作 | [Agent 配置](backend/aiq.yml)、[论文检索工具](backend/paper_search.py) |
+| **NVIDIA TensorRT-LLM** | 使用官方容器加载开放模型权重，为客户端和 AI-Q 提供统一推理接口 | [启动脚本](deploy/start.sh)、[推理参数](deploy/serve.yml) |
+| **NVIDIA DGX Spark** | 承担自部署模型的计算，桌面端通过 SSH 隧道访问推理服务 | [部署步骤](docs/deployment.md) |
+
+研究与推理两层独立配置：AI-Q 在桌面本机随应用启动，模型服务可部署到 Spark。主力部署配置为 **Qwen3.8-27B**。框选截图由支持图片输入的视觉模型识别，模型角色与验证范围在部署文档中单独说明。
+
+每次关联检索都会发起官方 Skill 研究，并与学术索引查询并行执行。研究报告中的 arXiv、DOI 线索经元数据核对后进入候选集合，再按选区相关性排序。用户既能看到论文之间的探索关系，也能查看这次 NVIDIA AI-Q 研究使用的来源。
+
 ## 从阅读到探索
 
 **导入 PDF → 框选内容 → 查找相关论文 → 下载并关联 → 继续阅读或返回原文**
@@ -17,11 +42,8 @@ Paper Tree 是一款桌面论文阅读应用。在 PDF 中框选陌生概念或�
 - **选择自己的模型**：支持 OpenAI 兼容接口，也可连接 DGX Spark 上由 NVIDIA TensorRT-LLM 部署的 Qwen3.8-27B。
 - **本机管理阅读资料**：保存 PDF、阅读关系和检索记录，支持标题修改、分支删除及中英文界面。
 
-关系图记录的是你的阅读探索路径，连线不一定代表正式的文献引用。
+关系图记录的是你的阅读探索路径，不一定代表正式的文献引用。
 
-## 开始使用
-
-通过源码安装并运行，已在 macOS 上验证。
 
 ### 安装与启动
 
@@ -85,16 +107,6 @@ URL 不包含 `/chat/completions`。点击 **保存并重启**，应用和本机
 
 PDF、阅读关系和检索记录保存在本机。模型密钥经 Electron `safeStorage` 加密保存，界面不会显示已保存密钥的明文。
 
-PDF 文字在本地提取；建立索引时，首页内容会发送给你配置的模型。框选截图会发送给你配置的视觉模型识别；检索时，识别原文及必要上下文用于模型和 AI-Q 研究，查询词会发送给学术检索来源。选择自部署模型可以在自己的设备上完成推理，但查找与下载公开论文仍需要联网。
-
-## 文档
-
-| 文档 | 内容 |
-| --- | --- |
-| [使用指南](docs/usage.md) | 阅读、检索、下载、回溯与工作区管理 |
-| [DGX Spark 部署](docs/deployment.md) | 使用 TensorRT-LLM 启动本地模型 |
-| [NVIDIA 集成](docs/skills.md) | Agent Skill、AI-Q 安装与配置 |
-| [架构说明](docs/architecture.md) | 组件职责、数据流与本地存储 |
-| [示例与验证](docs/testing.md) | 公开论文示例与验证命令 |
+PDF 文字在本地提取；检索时，识别原文及必要上下文用于模型和 AI-Q 研究，查询词会发送给学术检索来源。选择自部署模型可以在自己的设备上完成推理，但查找与下载公开论文仍需要联网。
 
 第三方 Skill 的版本和许可证见 [vendor/nvidia-skills](vendor/nvidia-skills)。论文全文、个人工作区和模型权重不随仓库分发。

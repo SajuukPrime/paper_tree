@@ -1,8 +1,16 @@
-# NVIDIA Agent Skills 集成
+# Agent Skills 设计与集成
 
 [返回 README](../README.md) · [架构说明](architecture.md) · [模型部署](deployment.md)
 
 Paper Tree 使用 NVIDIA 官方 **`aiq-research`** Skill，为选中的论文内容生成带来源的研究报告。每次关联检索都会调用该流程，报告可在候选面板的「研究记录」中查看。
+
+## 设计：把研究能力接入一次阅读操作
+
+Skill 的入口是用户在 PDF 中确认的选区。应用先用视觉模型识别截图，再结合论文主题与缓存引用整理研究目标，保留方法名、学术术语和参考文献线索。`aiq-research` 接收这些研究数据，在 NVIDIA AI-Q 后台执行研究；PDF 交互、截图识别、候选排序和下载建树由应用的相应模块承担。
+
+本项目复用 [官方 SKILL.md](../vendor/nvidia-skills/aiq-research/SKILL.md) 与其 [Python helper](../vendor/nvidia-skills/aiq-research/scripts/aiq.py)，由 Electron 适配层按明确步骤调用。集成方式是将官方 Skill 的调用协议接入产品流程，并固定上游版本。Paper Tree 编写的 `paper_search` 是注册到 NAT 的领域工具：它为 AI-Q 提供论文数据源，和官方 Agent Skill 是不同层次的组件。
+
+选择 NVIDIA AI-Q 的作用在于将研究 Agent、模型和数据源组织为可配置流程。应用把当前阅读问题传给研究后台，后台调用论文工具并组织带引用的报告；模型从云端接口切换到 Spark 上的 TensorRT-LLM 时，沿用相同的 Skill 调用入口和论文工具。
 
 ## 如何参与论文检索
 
@@ -13,6 +21,18 @@ Paper Tree 使用 NVIDIA 官方 **`aiq-research`** Skill，为选中的论文内
 ```
 
 论文搜索工具使用 OpenAlex、Crossref 和 arXiv。模型负责理解选区与评估相关性，候选标题和获取地址来自学术来源。每次成功研究会保存 Skill 版本、报告和调用时间，便于回看探索依据。
+
+研究与直接学术索引查询并行执行。报告中的 arXiv 和 DOI 链接会再次查询元数据，与索引结果一起去重、排除当前论文，然后逐篇评估相关性；候选数量由来源结果决定。若 AI-Q 研究未完成，应用明确标注状态，保留学术索引结果，不将其标为成功的 Skill 报告。
+
+## 调用与研究配置
+
+1. Electron 确认本机 AI-Q 就绪，通过官方 helper 执行 `health`。
+2. 将检索意图、查询词与保留术语传入 `chat`。研究提示要求真实论文来源、作者年份和简短关联依据。
+3. AI-Q 使用 `backend/aiq.yml` 中的模型与论文数据源执行研究。当前采用同步流程，关闭自动升级与反问；浅层研究配置启用来源引用，最多 5 轮模型调用、3 次工具迭代。
+4. 接收带来源 URL 的报告；若后台返回异步 job ID，适配层通过 `status` 和 `report` 获取结果。
+5. 将报告、Skill 固定版本、调用时间及任务 ID（如有）保存到研究任务。用户在候选面板展开研究记录即可查看。
+
+这一流程将检索依据与阅读节点保存在一起。返回原文时，用户可以同时找到当时的选区、候选论文和研究来源。
 
 ![在论文关联面板中查看 NVIDIA aiq-research 的来源报告](images/research-record.png)
 

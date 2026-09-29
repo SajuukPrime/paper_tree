@@ -1,8 +1,25 @@
-# DGX Spark 模型部署
+# 部署、优化与技术栈
 
 [返回 README](../README.md) · [使用指南](usage.md) · [NVIDIA 集成](skills.md)
 
 Paper Tree 支持通过 NVIDIA TensorRT-LLM 在 DGX Spark 上运行模型。默认使用 **Qwen3.8-27B**；也可选择 **Qwen3.5-9B**。Electron 客户端与 NVIDIA AI-Q 共用 OpenAI 兼容接口，切换模型无需修改阅读和检索流程。
+
+## 技术栈与模型分工
+
+| 层次 | 技术 / 模型 | 用途 |
+| --- | --- | --- |
+| 本地计算设备 | NVIDIA DGX Spark，GB10 / aarch64 | 承载自部署模型推理 |
+| GPU 容器接入 | NVIDIA Container Toolkit、CDI、Docker | 将 Spark GPU 提供给推理容器 |
+| 推理引擎 | NVIDIA TensorRT-LLM `1.3.0rc28` 官方镜像 | 加载模型权重，提供聊天与工具调用接口 |
+| 研究后台 | NVIDIA AI-Q Blueprint / NeMo Agent Toolkit（NAT） | 运行研究 Agent、注册论文数据源和工具 |
+| Agent Skill | NVIDIA 官方 `aiq-research` | 通过 helper 发起研究、获取报告并保留来源 |
+| 本地主力模型 | Qwen3.8-27B | 论文主题提取、查询规划、研究和候选相关性评分 |
+| 本地轻量模型 | Qwen3.5-9B | 使用同一服务接口切换模型规模 |
+| 云端测试模型 | `qwen-flash`、`qwen3-vl-flash` | 分别承担文字任务和框选截图识别 |
+| 桌面与数据 | Electron、React、PDF.js、vis-network、SQLite | PDF 阅读、关系可视化、下载与本地索引 |
+| 学术来源 | OpenAlex、Crossref、arXiv；可选 IEEE 元数据 API | 获取可核对的论文元数据和来源链接 |
+
+NVIDIA 组件承担研究编排与推理基础设施，Qwen 系列提供模型权重。上表列出本项目实际使用或提供部署配置的组件；模型来源与推理引擎分别标明。官方 Skill、AI-Q 的固定版本及其许可证见 [Agent Skills 说明](skills.md)。
 
 ## 部署结构
 
@@ -12,6 +29,8 @@ Paper Tree + 本机 AI-Q ── SSH 隧道 ── TensorRT-LLM 容器 → 模型
 ```
 
 模型推理运行在 Spark 上，PDF 阅读、工作区和研究后台运行在桌面电脑上。学术检索和论文下载仍需要网络连接。
+
+AI-Q 通过 `npm run setup:aiq` 安装，由 Electron 启动并绑定本机回环地址；其模型配置随应用设置更新。桌面与 Spark 的分工允许分别管理研究进程和 GPU 推理进程，用户日常操作仍在一个阅读窗口内完成。
 
 ## 环境要求
 
@@ -92,8 +111,11 @@ ssh -N -L 8355:127.0.0.1:8355 YOUR_USER@SPARK_HOST
 | API URL | `http://127.0.0.1:8355/v1` |
 | API Key | `local`（当前回环服务未启用 API 鉴权，用作客户端占位值） |
 | Model | `model`，或 `/v1/models` 返回的实际 ID |
+| 视觉模型 | 同一接口下支持图片输入的模型 ID；只有服务确实支持视觉请求时才可填写 `model` |
 
 点击「保存并重启」。应用直接模型请求和本机 AI-Q 研究后台会使用同一接口。
+
+框选识别发送的是选框截图，使用 OpenAI 兼容的 `image_url` 消息格式。视觉模型与文字模型共用 API URL 和密钥，可以使用不同模型 ID。配置本地视觉推理时，需要同时核对模型能力与服务端的图片输入支持，不能仅凭文字聊天成功判断视觉接口可用。
 
 ## 4. 验证连接
 
@@ -105,7 +127,9 @@ python3 deploy/smoke.py
 
 脚本检查模型 ID、纯系统提示、JSON 输出与工具调用往返。默认接口是 `http://127.0.0.1:8355/v1`，可通过 `MODEL_URL`、`MODEL_ID`、`MODEL_API_KEY` 和 `MODEL_TIMEOUT` 覆盖配置。工具返回使用固定数据，不执行真实论文检索。
 
-连接检查通过后，在应用中按 [公开论文示例](testing.md) 完成一次框选、搜索和下载，即可验证完整流程。
+连接检查通过后，在应用中按 [公开论文示例](testing.md) 完成一次框选、搜索和下载：核对截图与识别原文一致、研究记录包含来源、候选能导入并返回原选区。该步骤同时验证视觉请求与完整研究流程。
+
+**验证范围**：现有 Spark 记录覆盖文字推理、结构化输出、工具调用及此前的论文探索流程；截图 OCR 是后续接入的路径，当前部署检查脚本只检查文字与工具协议。最新版本的全本地运行需要在所选视觉模型服务上完成上述框选验证。云端测试使用 `qwen3-vl-flash` 识别选区。
 
 ## 切换与停止
 
@@ -122,6 +146,18 @@ bash deploy/start.sh 9b
 
 ## 配置说明与性能
 
+优化针对个人阅读场景，采用原始开放权重和推理配置调整。参数与作用如下：
+
+| 配置 / 策略 | 实现位置 | 目的与取舍 |
+| --- | --- | --- |
+| `max_batch_size: 1` | `deploy/serve.yml` | 按单用户交互分配批处理容量 |
+| `--max_seq_len 8192` | `deploy/start.sh` | 约束单次上下文，长文通过主题、选区与引用摘要参与检索 |
+| KV 缓存比例 `0.1` | `deploy/serve.yml` | 控制可用 GPU 内存中的 KV 缓存分配比例；不等同于总显存上限 |
+| `enable_thinking=false` | 运行时聊天模板 | 减少面向检索任务的额外思考生成 |
+| `qwen3_coder` 工具解析器 | `deploy/start.sh` | 将模型工具调用输出转换为 Agent 使用的协议 |
+| 论文索引缓存、Skill 与索引查询并行 | SQLite、研究流程 | 复用主题与参考文献，减少重复处理和串行等待 |
+| 简短研究报告、有限工具迭代 | 研究提示、`backend/aiq.yml` | 将生成和工具访问集中于当前选区的问题 |
+
 `deploy/start.sh` 使用 NVIDIA 原始镜像，模型权重以只读方式挂载。脚本在缓存目录生成兼容模板，关闭思考模式，并兼容 AI-Q 只包含系统消息的请求。Qwen 工具调用使用 `qwen3_coder` 解析器；单用户缓存参数位于 `deploy/serve.yml`。
 
 已验证镜像摘要为 `sha256:a1f43376f0fd5719baaa258774249b1f8e0015783b76332c4927608545f90a80`，可通过 `TRT_IMAGE` 使用带摘要的镜像地址固定版本。
@@ -134,7 +170,7 @@ bash deploy/start.sh 9b
 - **找不到 GPU 设备**：检查 NVIDIA Container Toolkit 和 CDI 设备列表。
 - **模型接口无法连接**：检查容器是否完成预热、端口是否一致，以及 SSH 隧道是否仍在运行。
 - **提示模型不存在**：以 `/v1/models` 返回的 ID 为准，不使用权重目录名代替。
-- **研究等待较长**：27B 原始权重需要较长生成时间。应用允许研究调用等待最多 10 分钟；服务日志可用于区分正在推理与连接失败。
+- **研究等待较长**：27B 原始权重的耗时取决于输入与输出长度。当前同步 Skill `chat` 调用超时为 90 秒；超时后界面会说明 AI-Q 研究未完成，并保留学术索引结果。服务日志可用于区分推理耗时与连接失败。
 
 ## 参考资料
 
